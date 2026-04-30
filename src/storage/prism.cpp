@@ -41,6 +41,7 @@ void define_prism(py::module& m) {
             .def_property_readonly("model_type", &storm::prism::Program::getModelType, "Model type")
             .def_property_readonly("has_undefined_constants", &storm::prism::Program::hasUndefinedConstants, "Flag if program has undefined constants")
             .def_property_readonly("undefined_constants_are_graph_preserving", &storm::prism::Program::undefinedConstantsAreGraphPreserving, "Flag if the undefined constants do not change the graph structure")
+            .def_property_readonly("actions", &storm::prism::Program::getActions, "All actions of this model.")
             .def("get_undefined_constants", &Program::getUndefinedConstants, "Collect the undefined constants")
             .def("substitute_constants", &Program::substituteConstants, "Substitute constants within program")
             .def("substitute_formulas", &Program::substituteFormulas, "Substitute formulas within program")
