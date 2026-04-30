@@ -3,6 +3,8 @@
 #include "storm/adapters/RationalFunctionAdapter.h"
 #include "storm/api/verification.h"
 #include "storm/environment/Environment.h"
+#include "storm/environment/modelchecker/ModelCheckerEnvironment.h"
+#include "storm/environment/modelchecker/MultiObjectiveModelCheckerEnvironment.h"
 #include "storm/environment/solver/MinMaxSolverEnvironment.h"
 #include "storm/models/symbolic/StandardRewardModel.h"
 #include "storm/modelchecker/results/CheckResult.h"

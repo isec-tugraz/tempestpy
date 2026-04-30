@@ -97,6 +97,9 @@ void define_typed_result(py::module& m, std::string const& vtSuffix) {
             return result[state];
         }, py::arg("state"), "Get result for given state")
         .def("get_values", [](storm::modelchecker::ExplicitQuantitativeCheckResult<ValueType> const& res) {return res.getValueVector();}, "Get model checking result values for all states")
+        .def_property_readonly("values", [](storm::modelchecker::ExplicitQuantitativeCheckResult<ValueType> const& res) {return res.getValueVector();}, "Get model checking result values for all states")
+        .def("get_choice_values", [](storm::modelchecker::ExplicitQuantitativeCheckResult<ValueType> const& res) {return res.getChoiceValues();}, "Return the vector of choice/state-action values. Only available if the choice values were computed.")
+        .def_property_readonly("has_choice_values", [](storm::modelchecker::ExplicitQuantitativeCheckResult<ValueType> const& res) {return res.hasChoiceValues();}, "Whether this result contains choice/state-action values.")
         .def_property_readonly("scheduler", [](storm::modelchecker::ExplicitQuantitativeCheckResult<ValueType> const& res) {return res.getScheduler();}, "get scheduler")
     ;
 
