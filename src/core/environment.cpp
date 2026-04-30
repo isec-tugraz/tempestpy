@@ -3,6 +3,8 @@
 #include "storm/environment/Environment.h"
 #include "storm/environment/solver/SolverEnvironment.h"
 #include "storm/environment/solver/AllSolverEnvironments.h"
+#include "storm/environment/modelchecker/ModelCheckerEnvironment.h"
+#include "storm/environment/modelchecker/MultiObjectiveModelCheckerEnvironment.h"
 
 void define_environment(py::module& m) {
     py::enum_<storm::solver::EquationSolverType>(m, "EquationSolverType", "Solver type for equation systems")
@@ -39,6 +41,7 @@ void define_environment(py::module& m) {
     py::class_<storm::Environment>(m, "Environment", "Environment")
         .def(py::init<>(), "Construct default environment")
         .def_property_readonly("solver_environment", [](storm::Environment& env) -> auto& {return env.solver();}, "solver part of environment")
+        .def_property_readonly("modelchecker_environment", [](storm::Environment& env) -> auto& {return env.modelchecker();}, "solver part of environment")
     ;
 
     py::class_<storm::SolverEnvironment>(m, "SolverEnvironment", "Environment for solvers")
@@ -58,6 +61,11 @@ void define_environment(py::module& m) {
     py::class_<storm::MinMaxSolverEnvironment>(m, "MinMaxSolverEnvironment", "Environment for Min-Max-Solvers")
         .def_property("method", &storm::MinMaxSolverEnvironment::getMethod, [](storm::MinMaxSolverEnvironment& mmenv, storm::solver::MinMaxMethod const& m) { mmenv.setMethod(m, false); } )
         .def_property("precision", &storm::MinMaxSolverEnvironment::getPrecision,  &storm::MinMaxSolverEnvironment::setPrecision);
+
+    py::class_<storm::ModelCheckerEnvironment>(m, "ModelCheckerEnvironment", "Environment for modelchecker")
+        .def("set_produce_choice_values", &storm::ModelCheckerEnvironment::setProduceChoiceValues, "whether to produce choice values", py::arg("new_value") = true)
+        .def_property_readonly("produce_choice_values", &storm::ModelCheckerEnvironment::getProduceChoiceValues)
+    ;
 
 
 
