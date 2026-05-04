@@ -4,7 +4,9 @@
 #include "storm/environment/solver/SolverEnvironment.h"
 #include "storm/environment/solver/AllSolverEnvironments.h"
 #include "storm/environment/modelchecker/ModelCheckerEnvironment.h"
+#include "storm/environment/modelchecker/ConditionalModelCheckerEnvironment.h"
 #include "storm/environment/modelchecker/MultiObjectiveModelCheckerEnvironment.h"
+
 
 void define_environment(py::module& m) {
     py::enum_<storm::solver::EquationSolverType>(m, "EquationSolverType", "Solver type for equation systems")
