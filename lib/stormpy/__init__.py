@@ -124,14 +124,18 @@ def _convert_sparse_model(model, value_type=_ValueType.DOUBLE):
             raise stormpy.exceptions.StormError("Not supported model type constructed")
 
 
-def _convert_symbolic_model(model, parametric=False):
+def _convert_symbolic_model(model, parametric=False, value_type=None):
     """
     Convert (parametric) model in symbolic representation into model corresponding to exact model type.
     :param model: Symbolic model.
     :param parametric: Flag indicating if the model is parametric.
+    :param value_type: Optional value type of the symbolic model.
     :return: Model corresponding to exact model type.
     """
-    if parametric:
+    if value_type is None:
+        value_type = _ValueType.PARAMETRIC if parametric else _ValueType.DOUBLE
+
+    if value_type == _ValueType.PARAMETRIC:
         assert model.supports_parameters
         if model.model_type == ModelType.DTMC:
             return model._as_symbolic_pdtmc()
@@ -143,6 +147,19 @@ def _convert_symbolic_model(model, parametric=False):
             return model._as_symbolic_pma()
         else:
             raise stormpy.exceptions.StormError("Not supported parametric model constructed")
+    elif value_type == _ValueType.EXACT:
+        assert not model.supports_parameters
+        assert model.is_exact
+        if model.model_type == ModelType.DTMC:
+            return model._as_symbolic_exact_dtmc()
+        elif model.model_type == ModelType.MDP:
+            return model._as_symbolic_exact_mdp()
+        elif model.model_type == ModelType.CTMC:
+            return model._as_symbolic_exact_ctmc()
+        elif model.model_type == ModelType.MA:
+            return model._as_symbolic_exact_ma()
+        else:
+            raise stormpy.exceptions.StormError("Not supported exact model constructed")
     else:
         assert not model.supports_parameters
         if model.model_type == ModelType.DTMC:
@@ -291,6 +308,25 @@ def build_symbolic_model(symbolic_description, properties=None):
     else:
         intermediate = _core._build_symbolic_model_from_symbolic_description(symbolic_description)
     return _convert_symbolic_model(intermediate, parametric=False)
+
+
+def build_symbolic_exact_model(symbolic_description, properties=None):
+    """
+    Build an exact model in symbolic representation from a symbolic description.
+
+    :param symbolic_description: Symbolic model description to translate into a model.
+    :param List[Property] properties: List of properties that should be preserved during the translation. If None, then all properties are preserved.
+    :return: Exact model in symbolic representation.
+    """
+    if not symbolic_description.undefined_constants_are_graph_preserving:
+        raise stormpy.exceptions.StormError("Program still contains undefined constants")
+
+    if properties:
+        formulae = [(prop.raw_formula if isinstance(prop, Property) else prop) for prop in properties]
+        intermediate = _core._build_symbolic_exact_model_from_symbolic_description(symbolic_description, formulae)
+    else:
+        intermediate = _core._build_symbolic_exact_model_from_symbolic_description(symbolic_description)
+    return _convert_symbolic_model(intermediate, value_type=_ValueType.EXACT)
 
 
 def build_symbolic_parametric_model(symbolic_description, properties=None):
@@ -511,6 +547,9 @@ def check_model_dd(model, property, only_initial_states=False, environment=Envir
     if model.supports_parameters:
         task = _core.ParametricCheckTask(formula, only_initial_states)
         return _core._parametric_model_checking_dd_engine(model, task, environment=environment)
+    elif model.is_exact:
+        task = _core.ExactCheckTask(formula, only_initial_states)
+        return _core._exact_model_checking_dd_engine(model, task, environment=environment)
     else:
         task = _core.CheckTask(formula, only_initial_states)
         return _core._model_checking_dd_engine(model, task, environment=environment)
