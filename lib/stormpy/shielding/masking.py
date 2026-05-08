@@ -116,6 +116,12 @@ class ShieldResult:
             and self.bitmask_by_state[sid].bit_count() == self.nr_actions_by_state[sid]
         )
 
+    # ------------------------------------------------------------------
+    # Dunder
+    # ------------------------------------------------------------------
+    def __len__(self) -> int:
+        return len(self.bitmask_by_state)
+
 
 
 
