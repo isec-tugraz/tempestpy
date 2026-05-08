@@ -3,6 +3,7 @@ from typing import Callable, Literal, Optional, Optional
 import numpy as np
 
 from loguru import logger
+import stormpy
 
 from .action_lookup import ActionLookup
 
@@ -129,6 +130,10 @@ def compute_action_mask(self, config: ShieldConfig) -> ShieldResult:
 
     action_lookup: Optional[ActionLookup] = config.action_lookup
     nr_actions_global: Optional[int] = len(action_lookup) if action_lookup is not None else None
+    is_minimize = (
+        self.optimality_type is not None
+        and self.optimality_type == stormpy.OptimizationDirection.Minimize
+    )
 
     nr_states = int(self._model.nr_states)
     bitmask_by_state: list[int] = [0] * nr_states
@@ -142,21 +147,34 @@ def compute_action_mask(self, config: ShieldConfig) -> ShieldResult:
         end = int(self._choice_offsets[sid + 1])
         pvals = self._choice_values[start:end]
 
-        p_best = float(pvals.max()) if pvals.size > 0 else 0.0
+        if pvals.size > 0:
+            p_best = float(pvals.min()) if is_minimize else float(pvals.max())
+        else:
+            p_best = 0.0
         best_by_state[sid] = p_best
         nr_actions_by_state[sid] = nr_actions_global if action_lookup is not None else int(pvals.size)
 
-        # Base predicate
+        # Base predicate — direction depends on optimality type
+        threshold = float(config.threshold)
         if config.comparison == "absolute":
-            allowed = pvals >= float(config.threshold)
+            allowed = pvals <= threshold if is_minimize else pvals >= threshold
         elif config.comparison == "relative":
-            if p_best == 0.0:
-                if config.threshold <= 1.0:
-                    allowed = np.ones_like(pvals, dtype=bool)
+            if is_minimize:
+                if p_best == 1.0:
+                    if threshold >= 1.0:
+                        allowed = np.ones_like(pvals, dtype=bool)
+                    else:
+                        allowed = np.zeros_like(pvals, dtype=bool)
                 else:
-                    allowed = np.zeros_like(pvals, dtype=bool)
+                    allowed = pvals <= (threshold * p_best)
             else:
-                allowed = pvals >= (float(config.threshold) * p_best)
+                if p_best == 0.0:
+                    if threshold <= 1.0:
+                        allowed = np.ones_like(pvals, dtype=bool)
+                    else:
+                        allowed = np.zeros_like(pvals, dtype=bool)
+                else:
+                    allowed = pvals >= (threshold * p_best)
         else:
             raise ValueError(f"Unknown comparison mode: {config.comparison!r}")
 
@@ -178,7 +196,7 @@ def compute_action_mask(self, config: ShieldConfig) -> ShieldResult:
 
         fallback_bits = 0
         if bits == 0 and pvals.size > 0:
-            best_local = int(np.argmax(pvals))
+            best_local = int(np.argmin(pvals)) if is_minimize else int(np.argmax(pvals))
             if action_lookup is None:
                 fallback_bits = 1 << best_local
             else:
