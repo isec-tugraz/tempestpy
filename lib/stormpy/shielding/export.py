@@ -263,7 +263,6 @@ def mask_metadata(mask: ShieldResult) -> dict[str, Any]:
 
 def valuation_to_action_label_probability(
     model: Any,
-    mask: ShieldResult,
     state_lookup: Any,
     state_action_values: StateActionValueLookup,
 ) -> dict[StateValuationKey, dict[FrozenSet[str], float]]:
@@ -349,3 +348,55 @@ def pretty(
 
     return "\n".join(lines)
 
+
+# -----------------------------
+# Storm-compatible text format
+# -----------------------------
+
+def storm_format(factory: Any, mask: ShieldResult) -> str:
+    """
+    Produce a string matching Storm's shield text format.
+
+    Shows all states where the shield blocks at least one action, with the
+    per-action choice values that drove the shielding decision.
+
+    Format per line:
+        {state_id}: [{var=val    & ...}]    {val}: ({idx} {label});    ...
+    """
+    cfg = mask.config
+    comparison_name = "absolute" if cfg.comparison == "absolute" else "relative"
+    header = f"Pre-Safety-Shield with {comparison_name} comparison (gamma = {cfg.threshold:.6f}):"
+
+    factory._extract_choice_values()
+    state_lookup = factory.state_lookup
+
+    rows: list[tuple[int, str, str]] = []
+    for state in factory._model.states:
+        sid = int(state.id)
+        vals = state_lookup.values_for_state_id(sid)
+        val_str = "    & ".join(f"{v}={vals[v]}" for v in state_lookup.variables)
+
+        pvals = factory.get_choice_values_for_state(sid)
+        action_entries = []
+        for i, action in enumerate(state.actions):
+            label = next(iter(action.labels), str(i))
+            action_entries.append(f"{pvals[i]:g}: ({i} {{{label}}})")
+        actions_str = ";    ".join(action_entries)
+
+        rows.append((sid, val_str, actions_str))
+
+    if not rows:
+        return header
+
+    id_width = max(len(str(sid)) for sid, _, _ in rows)
+    val_width = max(len(vs) for _, vs, _ in rows)
+    # Align "model state:" header to the right edge of the valuation column.
+    # State line layout: "{sid}: [{val_str}]    {actions}"
+    state_col = id_width + 4 + val_width  # ": [" (3) + "]" (1)
+    col_header = f"{'model state:':>{state_col}}    choice(s) [<value>: (<action {{action label}})>]:"
+
+    lines = [header, col_header]
+    for sid, val_str, actions_str in rows:
+        lines.append(f"{sid:{id_width}d}: [{val_str}]    {actions_str}")
+
+    return "\n".join(lines)

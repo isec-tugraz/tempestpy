@@ -10,6 +10,7 @@ from .export import (
     valuation_to_allowed_action_labels_with_values,
     allowed_state_action_pairs,
     pretty,
+    storm_format,
 )
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "valuation_to_allowed_action_labels_with_values",
     "allowed_state_action_pairs",
     "pretty",
+    "storm_format",
 ]
