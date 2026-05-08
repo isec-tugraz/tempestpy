@@ -1,6 +1,8 @@
 import stormpy
 from helpers.helper import get_example_path
 
+import pytest
+
 from configurations import spot
 
 import math
@@ -267,6 +269,67 @@ class TestModelChecking:
         result.filter(filter)
         assert result.min == result.max
         assert math.isclose(result.min, 1 / 6, rel_tol=1e-6)
+
+    def test_model_checking_prism_dd_mdp_shield_mask(self):
+        program = stormpy.parse_prism_program(get_example_path("mdp", "maze_2.nm"))
+        formulas = stormpy.parse_properties_for_prism_program('Pmax=? [ F "goal" ]', program)
+        model = stormpy.build_symbolic_model(program, formulas)
+        environment = stormpy.Environment()
+        environment.modelchecker_environment.set_produce_choice_values()
+
+        result = stormpy.check_model_dd(model, formulas[0], environment=environment)
+
+        assert type(result) is stormpy.SymbolicQuantitativeCheckResult
+        assert result.has_choice_values
+        assert not result.has_shield_mask
+        shield_mask = result.compute_shield_mask(model, 0.5)
+        assert shield_mask.node_count > 0
+        result.compute_and_set_shield_mask(model, 0.5)
+        assert result.shield_mask.node_count == result.get_shield_mask().node_count
+        assert "s" in result.get_shield_mask().meta_variable_names
+        assert result.get_shield_mask().get_meta_variable("s").can_represent(0)
+        assert result.get_shield_mask().query({"s": 0}) == 15
+        shield_valuation, shield_value = next(iter(result.get_shield_mask()))
+        assert shield_value == 15
+        assert "s=0" in shield_valuation.to_string()
+
+    def test_model_checking_prism_dd_exact_mdp_shield_mask(self):
+        program = stormpy.parse_prism_program(get_example_path("mdp", "maze_2.nm"))
+        formulas = stormpy.parse_properties_for_prism_program('Pmax=? [ F "goal" ]', program)
+        model = stormpy.build_symbolic_exact_model(program, formulas)
+        environment = stormpy.Environment()
+        environment.modelchecker_environment.set_produce_choice_values()
+
+        result = stormpy.check_model_dd(model, formulas[0], environment=environment)
+
+        assert type(result) is stormpy.SymbolicExactQuantitativeCheckResult
+        assert result.has_choice_values
+        assert not result.has_shield_mask
+        shield_mask = result.compute_shield_mask(model, stormpy.Rational("0.5"))
+        assert shield_mask.node_count > 0
+        result.compute_and_set_shield_mask(model, stormpy.Rational("0.5"))
+        assert result.shield_mask.node_count == result.get_shield_mask().node_count
+        shield_valuation, shield_value = next(iter(result.get_shield_mask()))
+        assert shield_value == 0b1111
+        assert "s=0" in shield_valuation.to_string()
+
+    def test_shield_factory_dd_build_returns_shield_add(self):
+        from stormpy.shielding import ShieldConfig, ShieldFactory
+
+        factory = ShieldFactory(
+            get_example_path("mdp", "maze_2.nm"),
+            property='Pmax=? [ F "goal" ]',
+            engine="dd",
+        )
+
+        shield = factory.build(ShieldConfig(threshold=0.7))
+
+        assert not factory.is_sparse
+        assert shield.bitmask_by_state.node_count > 0
+        assert shield.bitmask_by_state.get_meta_variable("s").can_represent(0)
+        assert shield.bitmask_by_state.query({"s": 0}) == 15
+        assert shield.fallback_by_state == []
+        assert shield.nr_actions_by_state == []
 
     def test_model_checking_prism_hybrid_dtmc(self):
         program = stormpy.parse_prism_program(get_example_path("dtmc", "die.pm"))

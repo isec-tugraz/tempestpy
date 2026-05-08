@@ -52,9 +52,13 @@ class ShieldFactory:
         constants: Optional[Dict[str, Any]] = None,
         prism_program: Optional[Any] = None,
         check_result: Optional[Any] = None,
+        engine: str = "sparse",
     ) -> None:
         self._property = property
         self._check_result = check_result
+        if engine not in {"sparse", "dd"}:
+            raise ValueError(f"Selected engine {engine} is not supported")
+        self._sparse = engine == "sparse"
 
         if isinstance(model, str):
             # --- Mode 1: path string ---
@@ -82,9 +86,10 @@ class ShieldFactory:
             self._model = model
             if property is not None:
                 self._prepare_property(property)
-            # Store labeling references for consistency
-            self._state_valuations = model.state_valuations
-            self._choice_labeling = model.choice_labeling
+            # Store labeling references for consistency where sparse shielding needs them.
+            if self.is_sparse:
+                self._state_valuations = model.state_valuations
+                self._choice_labeling = model.choice_labeling
 
         self._assert_supported_model(self._model)
         if property is not None:
@@ -99,6 +104,7 @@ class ShieldFactory:
         *,
         prism_program: Any,
         result: Any,
+        engine: str = "sparse",
     ) -> "ShieldFactory":
         """
         Build a ShieldFactory from a pre-built model and an already-computed check result.
@@ -121,6 +127,7 @@ class ShieldFactory:
             model,
             prism_program=prism_program,
             check_result=result,
+            engine=engine,
         )
 
     # ---- Public properties ----
@@ -173,7 +180,6 @@ class ShieldFactory:
             )
         if self._check_result is None:
             self._run_model_check()
-        self._extract_choice_values()
         return self.compute_mask(config)
 
     def compute_mask(self, config: ShieldConfig) -> Any:
@@ -187,7 +193,6 @@ class ShieldFactory:
                 "Cannot compute mask: no check result available. "
                 "Call build() first or use ShieldFactory.from_check_result."
             )
-        self._extract_choice_values()
         return compute_action_mask(self, config)
 
     # ---- Prism / model building internals ----
@@ -213,9 +218,13 @@ class ShieldFactory:
             options = stormpy.BuilderOptions(True, True)
         options.set_build_state_valuations()
         options.set_build_choice_labels()
-        model = stormpy.build_sparse_model_with_options(self._prism_program, options)
-        self._state_valuations = model.state_valuations
-        self._choice_labeling = model.choice_labeling
+        if self.is_sparse:
+            model = stormpy.build_sparse_model_with_options(self._prism_program, options)
+            self._state_valuations = model.state_valuations
+            self._choice_labeling = model.choice_labeling
+        else:
+            properties = [self.formula] if self.formula is not None else None
+            model = stormpy.build_symbolic_model(self._prism_program, properties)
         return model
 
     def _prepare_property(self, property: str) -> None:
@@ -275,14 +284,23 @@ class ShieldFactory:
             raise TypeError("model must not be None")
         if model.model_type != stormpy.ModelType.MDP:
             raise TypeError("the model must be an MDP")
-        if not model.has_choice_labeling():
-            raise TypeError("the model must be built with choice labeling")
-        if not model.has_state_valuations():
-            raise TypeError("the model must be built with state valuations")
+        if self.is_sparse:
+            if not model.is_sparse_model:
+                raise TypeError("engine='sparse' requires a sparse model")
+            if not model.has_choice_labeling():
+                raise TypeError("the model must be built with choice labeling")
+            if not model.has_state_valuations():
+                raise TypeError("the model must be built with state valuations")
+        elif not model.is_symbolic_model:
+            raise TypeError("engine='dd' requires a symbolic model")
 
     def _assert_supported_property(self, prop: Any) -> None:
         if prop is None:
             raise TypeError("property must not be None")
+
+    @property
+    def is_sparse(self) -> bool:
+        return self._sparse
 
     # ---- State lookup ----
 

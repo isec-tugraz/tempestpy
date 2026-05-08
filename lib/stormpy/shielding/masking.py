@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Callable, Literal, Optional, Optional
+from typing import Any, Callable, Literal, Optional
 import numpy as np
 
 from loguru import logger
@@ -125,13 +125,30 @@ class ShieldResult:
 
 
 
-def compute_action_mask(self, config: ShieldConfig) -> ShieldResult:
-    if not hasattr(self, "_choice_values") or self._choice_values is None:
-        if not hasattr(self, "_check_result") or self._check_result is None:
-            self._run_model_check()
-        self._extract_choice_values()
+def compute_action_mask(self, config: ShieldConfig) -> Any:
+    if not hasattr(self, "_check_result") or self._check_result is None:
+        self._run_model_check()
 
     assert hasattr(self, "_model") and self._model is not None, "Model not initialized"
+
+    if not self.is_sparse:
+        if config.comparison != "absolute":
+            raise ValueError("DD shield masks only support absolute threshold comparison")
+        if config.action_lookup is not None:
+            raise ValueError("DD shield masks do not support action_lookup remapping")
+        if not self._check_result.has_choice_values:
+            raise RuntimeError("Cannot compute DD shield mask: check result has no choice values")
+        shield_mask = self._check_result.compute_shield_mask(self._model, config.threshold)
+        return ShieldResult(
+            config=config,
+            bitmask_by_state=shield_mask,
+            fallback_by_state=[],
+            nr_actions_by_state=[],
+        )
+
+    if not hasattr(self, "_choice_values") or self._choice_values is None:
+        self._extract_choice_values()
+
     assert hasattr(self, "_choice_offsets") and self._choice_offsets is not None, "Choice offsets not initialized"
 
     action_lookup: Optional[ActionLookup] = config.action_lookup

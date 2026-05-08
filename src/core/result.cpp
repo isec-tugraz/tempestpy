@@ -8,6 +8,7 @@
 #include "storm/modelchecker/results/ExplicitParetoCurveCheckResult.h"
 
 #include "storm/models/symbolic/StandardRewardModel.h"
+#include "storm/models/symbolic/Mdp.h"
 
 template<typename ValueType>
 std::shared_ptr<storm::modelchecker::QualitativeCheckResult> createFilterInitialStatesSparse(std::shared_ptr<storm::models::sparse::Model<ValueType>> model) {
@@ -106,6 +107,26 @@ void define_typed_result(py::module& m, std::string const& vtSuffix) {
     py::class_<storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>, std::shared_ptr<storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>>>(m, ("Symbolic" + vtSuffix + "QuantitativeCheckResult").c_str(), "Symbolic quantitative model checking result", quantitativeCheckResult)
             .def("clone", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType> const& dd)  {return dd.clone()->template asSymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>(); })
             .def("get_values", &storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>::getValueVector)
+            .def("get_choice_values", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType> const& result) -> storm::dd::Add<storm::dd::DdType::Sylvan, ValueType> const& {
+                return result.getChoiceValues();
+            }, "Return the ADD containing choice/state-action values. Only available if choice values were computed.")
+            .def_property_readonly("has_choice_values", &storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>::hasChoiceValues, "Whether this result contains choice/state-action values.")
+            .def_property_readonly("choice_values", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType> const& result) -> storm::dd::Add<storm::dd::DdType::Sylvan, ValueType> const& {
+                return result.getChoiceValues();
+            }, "Choice/state-action values ADD.")
+            .def("compute_shield_mask", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType> const& result, storm::models::symbolic::Mdp<storm::dd::DdType::Sylvan, ValueType> const& model, ValueType const& threshold) {
+                return result.computeShieldMask(model, threshold);
+            }, py::arg("model"), py::arg("threshold"), "Compute a state-to-action shield bit mask from the stored choice values using the given threshold.")
+            .def("compute_and_set_shield_mask", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>& result, storm::models::symbolic::Mdp<storm::dd::DdType::Sylvan, ValueType> const& model, ValueType const& threshold) {
+                result.computeAndSetShieldMask(model, threshold);
+            }, py::arg("model"), py::arg("threshold"), "Compute and store a state-to-action shield bit mask from the stored choice values using the given threshold.")
+            .def("get_shield_mask", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType> const& result) -> storm::dd::Add<storm::dd::DdType::Sylvan, ValueType> const& {
+                return result.getShieldMask();
+            }, "Return the ADD containing the state-to-action shield bit mask. Only available if shield masks were computed.")
+            .def_property_readonly("has_shield_mask", &storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>::hasShieldMask, "Whether this result contains a state-to-action shield bit mask.")
+            .def_property_readonly("shield_mask", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType> const& result) -> storm::dd::Add<storm::dd::DdType::Sylvan, ValueType> const& {
+                return result.getShieldMask();
+            }, "State-to-action shield bit mask ADD.")
     ;
 
     py::class_<storm::modelchecker::HybridQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>, std::shared_ptr<storm::modelchecker::HybridQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>>>(m, ("Hybrid" + vtSuffix + "QuantitativeCheckResult").c_str(), "Hybrid quantitative model checking result", quantitativeCheckResult)
