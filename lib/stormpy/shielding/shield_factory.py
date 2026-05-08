@@ -351,14 +351,13 @@ class ShieldFactory:
             self.state_lookup,
         )
 
-    def to_valuation_action_label_probability(self, mask: Any) -> dict:
+    def to_valuation_action_label_probability(self) -> dict:
         """
         { valuation_key(state) -> { frozenset(action_labels): probability } }
         for ALL actions, not just shield-allowed ones.
         """
         return export_mod.valuation_to_action_label_probability(
             self._model,
-            mask,
             self.state_lookup,
             lambda sid, i: float(self.get_choice_values_for_state(sid)[i]),
         )
@@ -379,3 +378,6 @@ class ShieldFactory:
             show_valuations=show_valuations,
             action_ref=action_ref,
         )
+
+    def to_storm_format(self, mask: Any) -> str:
+        return export_mod.storm_format(self, mask)
