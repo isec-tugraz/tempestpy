@@ -2,7 +2,10 @@
 #include "storm/logic/Formulas.h"
 #include "storm/logic/CloneVisitor.h"
 #include "storm/logic/LabelSubstitutionVisitor.h"
+#include "storm/logic/GameFormula.h"
+#include "storm/logic/PlayerCoalition.h"
 #include "storm/storage/expressions/Variable.h"
+#include "storm/storage/PlayerIndex.h"
 #include "storm/adapters/RationalNumberAdapter.h"
 
 
@@ -115,6 +118,50 @@ void define_formulae(py::module& m) {
             .def_property_readonly("subformulas", &storm::logic::MultiObjectiveFormula::getSubformulas, "Get vector of subformulas")
             .def_property_readonly("nr_subformulas", &storm::logic::MultiObjectiveFormula::getNumberOfSubformulas, "Get number of subformulas");
 
+    m.attr("INVALID_PLAYER_INDEX") = storm::storage::INVALID_PLAYER_INDEX;
+
+    py::class_<storm::logic::PlayerCoalition>(m, "PlayerCoalition", "A coalition of players identified by name or index")
+        .def(py::init([](std::vector<py::object> const& players) {
+            std::vector<std::variant<std::string, storm::storage::PlayerIndex>> ids;
+            ids.reserve(players.size());
+            for (auto const& p : players) {
+                if (py::isinstance<py::str>(p)) {
+                    ids.push_back(p.cast<std::string>());
+                } else {
+                    ids.push_back(p.cast<storm::storage::PlayerIndex>());
+                }
+            }
+            return storm::logic::PlayerCoalition(ids);
+        }), py::arg("players"), "Construct from a list of player names (str) and/or player indices (int)")
+        .def("get_players", [](storm::logic::PlayerCoalition const& c) {
+            py::list result;
+            for (auto const& v : c.getPlayers()) {
+                if (std::holds_alternative<std::string>(v)) {
+                    result.append(py::str(std::get<std::string>(v)));
+                } else {
+                    result.append(py::int_(std::get<storm::storage::PlayerIndex>(v)));
+                }
+            }
+            return result;
+        }, "Get list of player identifiers (str or int)")
+        .def("__str__", [](storm::logic::PlayerCoalition const& c) {
+            std::ostringstream ss;
+            ss << c;
+            return ss.str();
+        })
+        .def("__repr__", [](storm::logic::PlayerCoalition const& c) {
+            std::ostringstream ss;
+            ss << "PlayerCoalition(" << c << ")";
+            return ss.str();
+        })
+    ;
+
     py::class_<storm::logic::GameFormula, std::shared_ptr<storm::logic::GameFormula>>(m, "GameFormula", "Game formula", unaryStateFormula)
-            .def_property_readonly("is_game_formula", &storm::logic::GameFormula::isGameFormula, "is it a game formula");
+        .def(py::init<storm::logic::PlayerCoalition const&, std::shared_ptr<storm::logic::Formula const>>(),
+             py::arg("coalition"), py::arg("subformula"))
+        .def_property_readonly("is_game_formula", &storm::logic::GameFormula::isGameFormula, "is it a game formula")
+        .def_property_readonly("coalition", &storm::logic::GameFormula::getCoalition, "the player coalition")
+        .def_property_readonly("has_qualitative_result", &storm::logic::GameFormula::hasQualitativeResult)
+        .def_property_readonly("has_quantitative_result", &storm::logic::GameFormula::hasQuantitativeResult)
+    ;
 }
