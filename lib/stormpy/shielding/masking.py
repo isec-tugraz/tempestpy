@@ -64,6 +64,9 @@ class ShieldResult:
     nr_actions_by_state: list[int]
     best_value_by_state: Optional[np.ndarray] = None
     bit_width: Optional[int] = None
+    # Non-None only for SMGs: frozenset of state ids belonging to the ego coalition.
+    # States absent from this set are adversary/environment states with no mask.
+    coalition_states: Optional[frozenset] = None
 
     # ------------------------------------------------------------------
     # Hot-path helpers (RL loop)
@@ -92,8 +95,14 @@ class ShieldResult:
     # State classification helpers (offline / debug)
     # ------------------------------------------------------------------
 
+    def is_coalition_state(self, sid: int) -> bool:
+        """True for all states in non-SMG models; for SMGs, True only for ego-coalition states."""
+        return self.coalition_states is None or sid in self.coalition_states
+
     def is_unsafe(self, sid: int) -> bool:
         """property violated, no action available at all."""
+        if self.coalition_states is not None and sid not in self.coalition_states:
+            return False
         return self.bitmask_by_state[sid] == 0 and self.fallback_by_state[sid] == 0
 
     def is_dangerous(self, sid: int) -> bool:
@@ -164,7 +173,16 @@ def compute_action_mask(self, config: ShieldConfig) -> Any:
     nr_actions_by_state: list[int] = [0] * nr_states
     best_by_state = np.zeros(nr_states, dtype=float)
 
+    coalition_states: Optional[frozenset] = None
+    if self._model.model_type == stormpy.ModelType.SMG:
+        raw = self._formula.raw_formula
+        if hasattr(raw, "coalition"):
+            bv = self._model.compute_states_of_coalition(raw.coalition)
+            coalition_states = frozenset(s for s in range(nr_states) if bv[s])
+
     for state in self._model.states:
+        if coalition_states is not None and state.id not in coalition_states:
+            continue
         sid = state.id
         start = int(self._choice_offsets[sid])
         end = int(self._choice_offsets[sid + 1])
@@ -238,4 +256,5 @@ def compute_action_mask(self, config: ShieldConfig) -> Any:
         fallback_by_state=fallback_by_state,
         nr_actions_by_state=nr_actions_by_state,
         best_value_by_state=best_by_state,
+        coalition_states=coalition_states,
     )
