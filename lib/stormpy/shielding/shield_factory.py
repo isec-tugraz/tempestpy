@@ -234,7 +234,12 @@ class ShieldFactory:
         )
         assert len(formula) == 1, f"Expected exactly one property, got {len(formula)}"
         self._formula = formula[0]
-        self._optimality_type = formula[0].raw_formula.optimality_type
+        raw = formula[0].raw_formula
+        # For GameFormula (SMGs) the optimality type sits on the inner operator
+        if getattr(raw, "is_game_formula", False):
+            self._optimality_type = raw.subformula.optimality_type
+        else:
+            self._optimality_type = raw.optimality_type
 
     # ---- Model checking internals ----
 
@@ -282,8 +287,8 @@ class ShieldFactory:
     def _assert_supported_model(self, model: Any) -> None:
         if model is None:
             raise TypeError("model must not be None")
-        if model.model_type != stormpy.ModelType.MDP:
-            raise TypeError("the model must be an MDP")
+        if model.model_type not in {stormpy.ModelType.MDP, stormpy.ModelType.SMG}:
+            raise TypeError("the model must be an MDP or SMG")
         if self.is_sparse:
             if not model.is_sparse_model:
                 raise TypeError("engine='sparse' requires a sparse model")
