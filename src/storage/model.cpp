@@ -11,6 +11,7 @@
 #include "storm/models/sparse/Ctmc.h"
 #include "storm/models/sparse/MarkovAutomaton.h"
 #include "storm/models/sparse/Smg.h"
+#include "storm/logic/PlayerCoalition.h"
 #include "storm/models/sparse/StandardRewardModel.h"
 #include "storm/models/symbolic/Model.h"
 #include "storm/models/symbolic/Dtmc.h"
@@ -352,6 +353,10 @@ void define_sparse_model(py::module& m, std::string const& vtSuffix) {
         .def(py::init<ModelComponents<ValueType> const&>(), py::arg("components"))
         .def("get_state_player_indications", &SparseSmg<ValueType>::getStatePlayerIndications, "Get for each state its corresponding player")
         .def("get_player_of_state", &SparseSmg<ValueType>::getPlayerOfState, py::arg("state"), "Get player for the given state")
+        .def("get_player_index", &SparseSmg<ValueType>::getPlayerIndex, py::arg("player_name"), "Get player index by name")
+        .def("get_player_names_to_index", &SparseSmg<ValueType>::getPlayerNamesToIndex, "Get mapping of player names to indices")
+        .def("compute_states_of_coalition", &SparseSmg<ValueType>::computeStatesOfCoalition, py::arg("coalition"), "Get BitVector of states belonging to the coalition")
+        .def_property_readonly("number_of_players", &SparseSmg<ValueType>::getNumberOfPlayers, "Number of players in the game")
     ;
 
     py::class_<SparseRewardModel<ValueType>>(m, ("Sparse" + vtSuffix + "RewardModel").c_str(), "Reward structure for sparse models")
