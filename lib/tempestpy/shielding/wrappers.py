@@ -4,7 +4,7 @@ try:
     import gymnasium as gym
 except ImportError as _exc:
     raise ImportError(
-        "stormpy.shielding.wrappers requires gymnasium. "
+        "tempestpy.shielding.wrappers requires gymnasium. "
         "Install it with:  pip install gymnasium"
     ) from _exc
 
