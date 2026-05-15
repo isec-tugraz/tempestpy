@@ -125,6 +125,29 @@ class ShieldResult:
             and self.bitmask_by_state[sid].bit_count() == self.nr_actions_by_state[sid]
         )
 
+    def classify_state(self, sid: int) -> str:
+        """One of 'safe' | 'critical' | 'dangerous' | 'unsafe'."""
+        if self.is_unsafe(sid):    return "unsafe"
+        if self.is_dangerous(sid): return "dangerous"
+        if self.is_critical(sid):  return "critical"
+        return "safe"
+
+    def states_by_class(self) -> dict[str, list[int]]:
+        """Return {class_name: [sid, ...]} for all four classes."""
+        out = {"safe": [], "critical": [], "dangerous": [], "unsafe": []}
+        for sid in range(len(self)):
+            out[self.classify_state(sid)].append(sid)
+        return out
+
+    def dangerous_states(self) -> list[int]:
+        return [s for s in range(len(self)) if self.is_dangerous(s)]
+
+    def critical_states(self) -> list[int]:
+        return [s for s in range(len(self)) if self.is_critical(s)]
+
+    def safe_states(self) -> list[int]:
+        return [s for s in range(len(self)) if self.is_safe(s)]
+
     # ------------------------------------------------------------------
     # Dunder
     # ------------------------------------------------------------------
