@@ -249,13 +249,16 @@ def compute_action_mask(self, config: ShieldConfig) -> Any:
                     bits |= (1 << action_index)
                 else:
                     action_labels = frozenset(state.actions[action_index].labels)
-                    if len(action_labels) != 1:
+                    if len(action_labels) > 1:
                         raise ValueError(
                             f"Actions with multiple labels are ambiguous for global index "
                             f"mapping, got: {action_labels}"
                         )
+                    if len(action_labels) == 0:
+                        continue
                     action_key = next(iter(action_labels))
                     bits |= (1 << action_lookup.index(action_key))
+
         bitmask_by_state[sid] = bits
 
         fallback_bits = 0
@@ -265,10 +268,12 @@ def compute_action_mask(self, config: ShieldConfig) -> Any:
                 fallback_bits = 1 << best_local
             else:
                 action_labels = frozenset(state.actions[best_local].labels)
-                if len(action_labels) != 1:
+                if len(action_labels) > 1:
                     raise ValueError(
                         f"Fallback action has multiple labels, ambiguous: {action_labels}"
                     )
+                if len(action_labels) == 0:
+                    continue
                 action_key = next(iter(action_labels))
                 fallback_bits = 1 << action_lookup.index(action_key)
         fallback_by_state[sid] = fallback_bits
