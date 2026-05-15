@@ -4,7 +4,7 @@ from typing import Any, Optional, Dict
 from pathlib import Path
 
 from ._helpers import _sanitize_property
-from .masking import compute_action_mask, ShieldConfig
+from .masking import compute_action_mask, ShieldConfig, ShieldResult
 from .state_lookup import StateValuationLookup
 from . import export as export_mod
 
@@ -325,6 +325,24 @@ class ShieldFactory:
 
     def get_state_id(self, values: dict) -> int:
         return self.state_lookup.get_state_id(values)
+
+    # ---- Dangerous / Critical / Safe / Unsafe helpers
+
+    def _states_with_valuations(self, sids: list[int]) -> list[dict]:
+        return [self.state_lookup.values_for_state_id(sid) for sid in sids]
+
+    def dangerous_states(self, *, mask: ShieldResult) -> list[dict]:
+        return self._states_with_valuations(mask.dangerous_states())
+
+    def critical_states(self, *, mask: ShieldResult) -> list[dict]:
+        return self._states_with_valuations(mask.critical_states())
+
+    def safe_states(self, *, mask: ShieldResult) -> list[dict]:
+        return self._states_with_valuations(mask.safe_states())
+
+    def states_by_class(self, *, mask: ShieldResult) -> dict[str, list[dict]]:
+        raw = mask.states_by_class()
+        return {cls: self._states_with_valuations(sids) for cls, sids in raw.items()}
 
     # ---- Export helpers ----
 
