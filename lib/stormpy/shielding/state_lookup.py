@@ -21,7 +21,7 @@ class StateValuationLookup:
     def make_key(
         values: Mapping[str, Any],
         variables: tuple[str, ...],
-    ) -> StateValuationKey:
+    ) -> StateValuationKey | None:
         """
         Build a canonical valuation key in fixed PRISM-variable order.
 
@@ -31,11 +31,7 @@ class StateValuationLookup:
         try:
             return tuple((var, values[var]) for var in variables)
         except KeyError as e:
-            missing = e.args[0]
-            raise KeyError(
-                f"Missing valuation for variable {missing!r}. "
-                f"Expected variables: {variables!r}"
-            ) from e
+            return None
 
     @classmethod
     def _extract_state_id_to_values(
@@ -108,6 +104,8 @@ class StateValuationLookup:
 
         for sid, values in enumerate(state_id_to_values):
             key = cls.make_key(values, variables)
+            if key is None:
+                continue
 
             if key in key_to_state_id:
                 other_sid = key_to_state_id[key]
@@ -128,6 +126,8 @@ class StateValuationLookup:
 
     def get_state_id(self, values: Mapping[str, Any]) -> int:
         key = self.make_key(values, self.variables)
+        if key is None:
+            raise KeyError(f"Incomplete valuation (missing variables): {values!r} and {self.variables!r}")
         try:
             return self.key_to_state_id[key]
         except KeyError as e:
@@ -135,9 +135,11 @@ class StateValuationLookup:
 
     def has_state(self, values: Mapping[str, Any]) -> bool:
         key = self.make_key(values, self.variables)
+        if key is None:
+            return False
         return key in self.key_to_state_id
 
-    def get_key(self, values: Mapping[str, Any]) -> StateValuationKey:
+    def get_key(self, values: Mapping[str, Any]) -> StateValuationKey | None:
         return self.make_key(values, self.variables)
 
     def key_for_state_id(self, state_id: int) -> StateValuationKey:
@@ -151,4 +153,3 @@ class StateValuationLookup:
             return self.state_id_to_values[state_id]
         except IndexError as e:
             raise KeyError(f"Unknown state id: {state_id}") from e
-
