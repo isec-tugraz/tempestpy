@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import pickle
 from typing import Any, Optional, Dict
-from pathlib import Path
 
 from ._helpers import _sanitize_property
 from .masking import compute_action_mask, ShieldConfig, ShieldResult
@@ -79,7 +79,9 @@ class ShieldFactory:
                 )
             # Accept either a parsed program or a path string
             if isinstance(prism_program, str):
-                self._prism_program = self._parse_prism_program(prism_program, constants)
+                self._prism_program = self._parse_prism_program(
+                    prism_program, constants
+                )
             else:
                 self._prism_program = prism_program
 
@@ -171,8 +173,12 @@ class ShieldFactory:
     def build(self, config: ShieldConfig) -> Any:
         """
         Run model checking (if not already done) and compute the action mask.
+        No-op when loaded from file (choice values already available).
         """
         logger.trace(f"ShieldFactory.build called with {config=}")
+        if self._model is None:
+            logger.trace("ShieldFactory.build called on a loaded factory.")
+            return None
         if self._check_result is None and getattr(self, "_formula", None) is None:
             raise RuntimeError(
                 "Cannot build shield: no formula and no check result available. "
@@ -219,7 +225,9 @@ class ShieldFactory:
         options.set_build_state_valuations()
         options.set_build_choice_labels()
         if self.is_sparse:
-            model = stormpy.build_sparse_model_with_options(self._prism_program, options)
+            model = stormpy.build_sparse_model_with_options(
+                self._prism_program, options
+            )
             self._state_valuations = model.state_valuations
             self._choice_labeling = model.choice_labeling
         else:
@@ -249,7 +257,9 @@ class ShieldFactory:
                 "Cannot run model checking: no property set. "
                 "Assign a property via ShieldFactory.prop = '...'"
             )
-        logger.trace(f"ShieldFactory._run_model_check: {str(self.formula.raw_formula)=}")
+        logger.trace(
+            f"ShieldFactory._run_model_check: {str(self.formula.raw_formula)=}"
+        )
         logger.info(f"ShieldFactory._run_model_check: {str(self.formula.raw_formula)=}")
         env = Environment()
         env.modelchecker_environment.set_produce_choice_values()
@@ -265,14 +275,16 @@ class ShieldFactory:
         Guarded: no-op if already extracted.
         """
         if getattr(self, "_choice_values", None) is not None:
-            logger.trace("ShieldFactory._extract_choice_values: already extracted, skipping")
+            logger.trace(
+                "ShieldFactory._extract_choice_values: already extracted, skipping"
+            )
             return
-        logger.trace("ShieldFactory._extract_choice_values: extracting from check result")
+        logger.trace(
+            "ShieldFactory._extract_choice_values: extracting from check result"
+        )
         result = self._check_result
         choice_vals = np.asarray(result.get_choice_values(), dtype=float)
-        counts = np.fromiter(
-            (len(s.actions) for s in self._model.states), dtype=int
-        )
+        counts = np.fromiter((len(s.actions) for s in self._model.states), dtype=int)
         offsets = np.concatenate(([0], np.cumsum(counts)))
         assert offsets[-1] == choice_vals.size, (
             f"Choice value count mismatch: {choice_vals.size} values vs "
@@ -343,6 +355,53 @@ class ShieldFactory:
     def states_by_class(self, *, mask: ShieldResult) -> dict[str, list[dict]]:
         raw = mask.states_by_class()
         return {cls: self._states_with_valuations(sids) for cls, sids in raw.items()}
+
+    # ---- Persistence ----
+
+    def __getstate__(self) -> dict:
+        """Pickle protocol: drop all Storm/C++ objects, keep only pure-Python data."""
+        self._extract_choice_values()
+        _ = self.state_lookup  # ensure state_lookup is built before pickling
+        return {
+            "state_lookup": self._state_lookup,
+            "choice_values": self._choice_values,
+            "choice_offsets": self._choice_offsets,
+            "choice_counts": self._choice_counts,
+            "property": self._property,
+            "sparse": self._sparse,
+            "action_map": getattr(self, "action_map", None),
+        }
+
+    def __setstate__(self, state: dict) -> None:
+        """Pickle protocol: restore from pure-Python data without the Storm model."""
+        self._state_lookup = state["state_lookup"]
+        self._choice_values = state["choice_values"]
+        self._choice_offsets = state["choice_offsets"]
+        self._choice_counts = state["choice_counts"]
+        self._property = state["property"]
+        self._sparse = state["sparse"]
+        self.action_map = state.get("action_map")
+        self._model = None
+        self._prism_program = None
+        self._check_result = None
+        self._formula = None
+        self._optimality_type = None
+        logger.info(
+            "ShieldFactory loaded from file — Storm model not available. "
+            "State lookup and choice values are ready; model-dependent methods will fail."
+        )
+
+    def save(self, path: str) -> None:
+        """Persist this factory to a pickle file (Storm model is dropped)."""
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+        logger.info(f"ShieldFactory saved to {path}")
+
+    @classmethod
+    def load(cls, path: str) -> ShieldFactory:
+        """Load a ShieldFactory saved with save(). The Storm model will not be available."""
+        with open(path, "rb") as f:
+            return pickle.load(f)
 
     # ---- Export helpers ----
 
