@@ -281,15 +281,12 @@ class TestModelChecking:
 
         assert type(result) is stormpy.SymbolicQuantitativeCheckResult
         assert result.has_choice_values
-        assert not result.has_shield_mask
-        shield_mask = result.compute_shield_mask(model, 0.5)
+        shield_mask = result.compute_mask_add(model, 0.5)
         assert shield_mask.node_count > 0
-        result.compute_and_set_shield_mask(model, 0.5)
-        assert result.shield_mask.node_count == result.get_shield_mask().node_count
-        assert "s" in result.get_shield_mask().meta_variable_names
-        assert result.get_shield_mask().get_meta_variable("s").can_represent(0)
-        assert result.get_shield_mask().query({"s": 0}) == 15
-        shield_valuation, shield_value = next(iter(result.get_shield_mask()))
+        assert "s" in shield_mask.meta_variable_names
+        assert shield_mask.get_meta_variable("s").can_represent(0)
+        assert shield_mask.query({"s": 0}) == 15
+        shield_valuation, shield_value = next(iter(shield_mask))
         assert shield_value == 15
         assert "s=0" in shield_valuation.to_string()
 
@@ -304,12 +301,9 @@ class TestModelChecking:
 
         assert type(result) is stormpy.SymbolicExactQuantitativeCheckResult
         assert result.has_choice_values
-        assert not result.has_shield_mask
-        shield_mask = result.compute_shield_mask(model, stormpy.Rational("0.5"))
+        shield_mask = result.compute_mask_add(model, stormpy.Rational("0.5"))
         assert shield_mask.node_count > 0
-        result.compute_and_set_shield_mask(model, stormpy.Rational("0.5"))
-        assert result.shield_mask.node_count == result.get_shield_mask().node_count
-        shield_valuation, shield_value = next(iter(result.get_shield_mask()))
+        shield_valuation, shield_value = next(iter(shield_mask))
         assert shield_value == 0b1111
         assert "s=0" in shield_valuation.to_string()
 
