@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import pickle
+import tempfile
 from typing import Any, Optional, Dict
 
 from ._helpers import _sanitize_property
@@ -64,6 +66,7 @@ class ShieldFactory:
             # --- Mode 1: path string ---
             logger.trace(f"ShieldFactory.__init__: mode 1 (path), {model=}")
             self._model_path = str(model)
+            self._constants = constants
             self._prism_program = self._parse_prism_program(self._model_path, constants)
             if property is not None:
                 self._prepare_property(property)
@@ -79,11 +82,14 @@ class ShieldFactory:
                 )
             # Accept either a parsed program or a path string
             if isinstance(prism_program, str):
+                self._model_path = prism_program
                 self._prism_program = self._parse_prism_program(
                     prism_program, constants
                 )
             else:
+                self._model_path = None
                 self._prism_program = prism_program
+            self._constants = constants
 
             self._model = model
             if property is not None:
@@ -97,41 +103,6 @@ class ShieldFactory:
         if property is not None:
             self._assert_supported_property(property)
 
-    # ---- Alternative constructors ----
-
-    @classmethod
-    def from_check_result(
-        cls,
-        model: Any,
-        *,
-        prism_program: Any,
-        result: Any,
-        engine: str = "sparse",
-    ) -> "ShieldFactory":
-        """
-        Build a ShieldFactory from a pre-built model and an already-computed check result.
-        No model building or model checking will be performed; compute_mask can be
-        called directly.
-
-        prism_program may be a parsed storm::prism::Program or a path string.
-
-        Example::
-
-            shield2 = ShieldFactory.from_check_result(
-                shield.model,
-                prism_program=shield.prism_program,
-                result=my_result,
-            )
-            masked = shield2.compute_mask(ShieldConfig(...))
-        """
-        logger.trace("ShieldFactory.from_check_result called")
-        return cls(
-            model,
-            prism_program=prism_program,
-            check_result=result,
-            engine=engine,
-        )
-
     # ---- Public properties ----
 
     @property
@@ -141,6 +112,10 @@ class ShieldFactory:
     @property
     def prism_program(self) -> Any:
         return self._prism_program
+
+    @property
+    def prism_file(self) -> Optional[str]:
+        return getattr(self, "_model_path", None)
 
     @property
     def prop(self) -> Optional[str]:
@@ -168,12 +143,50 @@ class ShieldFactory:
     def optimality_type(self) -> Any:
         return getattr(self, "_optimality_type", None)
 
+    # ---- Copy / clone ----
+
+    def copy(self) -> "ShieldFactory":
+        """Shallow-clone config, share the underlying model."""
+        new = object.__new__(ShieldFactory)
+        new._model_path = getattr(self, "_model_path", None)
+        new._constants = getattr(self, "_constants", None)
+        new._prism_program = self._prism_program   # shared
+        new._model = self._model                   # intentionally shared
+        new._sparse = self._sparse
+        new._property = self._property             # str, immutable
+        new._formula = getattr(self, "_formula", None)
+        new._optimality_type = getattr(self, "_optimality_type", None)
+        new._state_valuations = getattr(self, "_state_valuations", None)
+        new._choice_labeling = getattr(self, "_choice_labeling", None)
+        new._state_lookup = getattr(self, "_state_lookup", None)  # shared
+        new._choice_values = getattr(self, "_choice_values", None)
+        new._choice_offsets = getattr(self, "_choice_offsets", None)
+        new._choice_counts = getattr(self, "_choice_counts", None)
+        new._check_result = None  # not carried over; recomputed on demand
+        new.action_map = getattr(self, "action_map", None)
+        return new
+
+    def __copy__(self) -> "ShieldFactory":
+        return self.copy()
+
+    def __deepcopy__(self, memo: dict) -> "ShieldFactory":
+        # deepcopy still shares the Storm model — treated as immutable data
+        new = self.copy()
+        memo[id(self)] = new
+        return new
+
+    def with_prop(self, prop: str) -> "ShieldFactory":
+        """Return a copy of this factory with a different property string."""
+        new = self.copy()
+        new.prop = prop
+        return new
+
     # ---- Build ----
 
     def build(self, config: ShieldConfig) -> Any:
         """
         Run model checking (if not already done) and compute the action mask.
-        No-op when loaded from file (choice values already available).
+        Returns None when loaded from a slim pickle (model not available).
         """
         logger.trace(f"ShieldFactory.build called with {config=}")
         if self._model is None:
@@ -182,7 +195,7 @@ class ShieldFactory:
         if self._check_result is None and getattr(self, "_formula", None) is None:
             raise RuntimeError(
                 "Cannot build shield: no formula and no check result available. "
-                "Pass a property string or use ShieldFactory.from_check_result."
+                "Pass a property string."
             )
         if self._check_result is None:
             self._run_model_check()
@@ -194,10 +207,15 @@ class ShieldFactory:
         Calls _extract_choice_values() if not already done.
         """
         logger.trace(f"ShieldFactory.compute_mask called with {config=}")
-        if self._check_result is None:
+        if self._model is None:
             raise RuntimeError(
-                "Cannot compute mask: no check result available. "
-                "Call build() first or use ShieldFactory.from_check_result."
+                "Cannot compute mask: Storm model not available. "
+                "Load with slim=False to include the model in the pickle."
+            )
+        if self._check_result is None and getattr(self, "_choice_values", None) is None:
+            raise RuntimeError(
+                "Cannot compute mask: no check result or pre-extracted choice values. "
+                "Call build() first."
             )
         return compute_action_mask(self, config)
 
@@ -218,10 +236,7 @@ class ShieldFactory:
 
     def _build_model_from_prism(self) -> Any:
         logger.trace("ShieldFactory._build_model_from_prism called")
-        if self.formula is not None:
-            options = stormpy.BuilderOptions([self.formula.raw_formula])
-        else:
-            options = stormpy.BuilderOptions(True, True)
+        options = stormpy.BuilderOptions(True, True)
         options.set_build_state_valuations()
         options.set_build_choice_labels()
         if self.is_sparse:
@@ -359,47 +374,125 @@ class ShieldFactory:
     # ---- Persistence ----
 
     def __getstate__(self) -> dict:
-        """Pickle protocol: drop all Storm/C++ objects, keep only pure-Python data."""
-        self._extract_choice_values()
-        _ = self.state_lookup  # ensure state_lookup is built before pickling
-        return {
-            "state_lookup": self._state_lookup,
-            "choice_values": self._choice_values,
-            "choice_offsets": self._choice_offsets,
-            "choice_counts": self._choice_counts,
+        """
+        Pickle protocol. Two modes controlled by self._pickle_slim (set via save()):
+
+        slim=True  (default): drops the Storm model, serialises choice values and
+                              state lookup only — smallest file, fast inference only.
+        slim=False:           exports the Storm model as DRN bytes so it can be
+                              restored without re-building; also stores the prism file
+                              path so model checking can be re-run after loading.
+        """
+        slim = getattr(self, "_pickle_slim", True)
+        state: dict = {
+            "slim": slim,
             "property": self._property,
             "sparse": self._sparse,
             "action_map": getattr(self, "action_map", None),
         }
+        if slim:
+            self._extract_choice_values()
+            _ = self.state_lookup
+            state["state_lookup"] = self._state_lookup
+            state["choice_values"] = self._choice_values
+            state["choice_offsets"] = self._choice_offsets
+            state["choice_counts"] = self._choice_counts
+        else:
+            # Export Storm model as DRN bytes via a temp file
+            tmp = tempfile.NamedTemporaryFile(suffix=".drn", delete=False)
+            tmp.close()
+            try:
+                stormpy.export_to_drn(self._model, tmp.name)
+                with open(tmp.name, "rb") as f:
+                    state["drn_bytes"] = f.read()
+            finally:
+                os.unlink(tmp.name)
+            state["prism_file"] = getattr(self, "_model_path", None)
+            state["constants"] = getattr(self, "_constants", None)
+            # Include already-computed values so model checking is not forced on load
+            if self._check_result is not None and getattr(self, "_choice_values", None) is None:
+                self._extract_choice_values()
+            _ = self.state_lookup
+            state["state_lookup"] = getattr(self, "_state_lookup", None)
+            state["choice_values"] = getattr(self, "_choice_values", None)
+            state["choice_offsets"] = getattr(self, "_choice_offsets", None)
+            state["choice_counts"] = getattr(self, "_choice_counts", None)
+        return state
 
     def __setstate__(self, state: dict) -> None:
-        """Pickle protocol: restore from pure-Python data without the Storm model."""
-        self._state_lookup = state["state_lookup"]
-        self._choice_values = state["choice_values"]
-        self._choice_offsets = state["choice_offsets"]
-        self._choice_counts = state["choice_counts"]
+        """Pickle protocol: restore from serialised state."""
+        slim = state.get("slim", True)
         self._property = state["property"]
         self._sparse = state["sparse"]
         self.action_map = state.get("action_map")
-        self._model = None
-        self._prism_program = None
         self._check_result = None
         self._formula = None
         self._optimality_type = None
-        logger.info(
-            "ShieldFactory loaded from file — Storm model not available. "
-            "State lookup and choice values are ready; model-dependent methods will fail."
-        )
+        self._state_lookup = state.get("state_lookup")
+        self._choice_values = state.get("choice_values")
+        self._choice_offsets = state.get("choice_offsets")
+        self._choice_counts = state.get("choice_counts")
+        if slim:
+            self._model = None
+            self._prism_program = None
+            self._model_path = None
+            self._constants = None
+            logger.info(
+                "ShieldFactory loaded (slim) — Storm model not available. "
+                "State lookup and choice values are ready; model-dependent methods will fail."
+            )
+        else:
+            drn_bytes: bytes = state["drn_bytes"]
+            tmp = tempfile.NamedTemporaryFile(suffix=".drn", delete=False)
+            try:
+                tmp.write(drn_bytes)
+                tmp.close()
+                self._model = stormpy.build_model_from_drn(tmp.name)
+            finally:
+                os.unlink(tmp.name)
+            self._model_path = state.get("prism_file")
+            self._constants = state.get("constants")
+            if self._model_path is not None:
+                self._prism_program = self._parse_prism_program(
+                    self._model_path, self._constants
+                )
+                if self._property is not None:
+                    self._prepare_property(self._property)
+            else:
+                self._prism_program = None
+            logger.info(
+                "ShieldFactory loaded (full) — Storm model restored from DRN. "
+                "Call build() to run model checking on the restored model."
+            )
 
-    def save(self, path: str) -> None:
-        """Persist this factory to a pickle file (Storm model is dropped)."""
-        with open(path, "wb") as f:
-            pickle.dump(self, f)
-        logger.info(f"ShieldFactory saved to {path}")
+    def save(self, path: str, *, slim: bool = True) -> None:
+        """
+        Persist this factory to a pickle file.
+
+        slim=True  (default): serialises choice values and state lookup only —
+                              smallest file, sufficient for inference.
+        slim=False:           also exports the Storm model as DRN bytes and stores
+                              the prism file path, so the factory is fully functional
+                              after loading without re-building the model.
+        """
+        self._pickle_slim = slim
+        try:
+            with open(path, "wb") as f:
+                pickle.dump(self, f)
+        finally:
+            del self._pickle_slim
+        logger.info(f"ShieldFactory saved to {path!r} (slim={slim})")
 
     @classmethod
-    def load(cls, path: str) -> ShieldFactory:
-        """Load a ShieldFactory saved with save(). The Storm model will not be available."""
+    def load(cls, path: str) -> "ShieldFactory":
+        """
+        Load a ShieldFactory saved with save().
+
+        slim=True saves: state lookup and choice values are ready for inference;
+                         the Storm model is not available.
+        slim=False saves: Storm model is restored from DRN; call build() to
+                          re-run model checking if fresh results are needed.
+        """
         with open(path, "rb") as f:
             return pickle.load(f)
 
