@@ -170,7 +170,7 @@ def compute_action_mask(self, config: ShieldConfig) -> Any:
             raise ValueError("DD shield masks do not support action_lookup remapping")
         if not self._check_result.has_choice_values:
             raise RuntimeError("Cannot compute DD shield mask: check result has no choice values")
-        shield_mask = self._check_result.compute_shield_mask(self._model, config.threshold)
+        shield_mask = self._check_result.compute_mask_add(self._model, config.threshold)
         return ShieldResult(
             config=config,
             bitmask_by_state=shield_mask,
