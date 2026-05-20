@@ -208,6 +208,8 @@ class ShieldFactory:
                 program.expression_manager, definition_string
             )
             program = program.define_constants(constant_map)
+        if not program.has_undefined_constants:
+            program = program.substitute_constants()
         return program
 
     def _build_model_from_prism(self) -> Any:
