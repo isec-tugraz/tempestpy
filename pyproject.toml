@@ -64,7 +64,7 @@ build-dir = "build/{wheel_tag}"
 wheel.install-dir = "stormpy"
 cmake.args = [
 ]
-wheel.packages = ["lib/stormpy"]
+wheel.packages = ["lib/stormpy", "lib/tempestpy"]
 sdist.include = [
     "lib/stormpy/_config.py",
     "lib/stormpy/info/_config.py",

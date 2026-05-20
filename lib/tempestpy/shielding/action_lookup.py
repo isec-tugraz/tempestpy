@@ -7,23 +7,34 @@ from typing import Mapping
 @dataclass(slots=True)
 class ActionLookup:
     """
-    Canonical mapping between action labels (as used in the PRISM model) and
-    global action indices (as used in the RL environment's discrete action space).
+    Canonical mapping between PRISM action labels and global RL action indices.
 
-    Multiple model labels may map to the same global index, e.g.:
-        {"move_left_fast": 0, "move_left_slow": 0, "right": 1}
+    Multiple PRISM labels may share the same global index:
 
-    Construction
-    ------------
-    ActionLookup.from_dict({"left": 0, "right": 1, "stay": 2})
+        ``{"move_left_fast": 0, "move_left_slow": 0, "right": 1}``
 
-    Indices must be contiguous from 0. Gaps are rejected at construction time
-    to prevent silent bitmask misalignment with the RL action space.
+    Indices must be contiguous integers starting at 0.  Gaps are rejected at
+    construction time to prevent silent bitmask misalignment with the RL
+    action space.
+
+    Attributes
+    ----------
+    label_to_index :
+        Maps each PRISM action label to its global RL action index.
+    index_to_labels :
+        Inverse map: global action index → list of PRISM labels.
+    nr_actions :
+        Number of distinct global action indices (= ``len(index_to_labels)``).
+
+    See Also
+    --------
+    ShieldConfig : Accepts an `ActionLookup` to enable global-index bitmasks.
+    ActionLookup.from_dict : Primary constructor.
     """
 
     label_to_index: dict[str, int]
-    index_to_labels: dict[int, list[str]]   # all labels sharing a global index
-    nr_actions: int                          # = number of distinct global indices
+    index_to_labels: dict[int, list[str]]
+    nr_actions: int
 
     # ------------------------------------------------------------------
     # Construction
@@ -105,9 +116,11 @@ class ActionLookup:
             ) from e
 
     def has_label(self, label: str) -> bool:
+        """Return ``True`` when *label* is present in this lookup."""
         return label in self.label_to_index
 
     def has_index(self, index: int) -> bool:
+        """Return ``True`` when *index* is a valid global action index."""
         return index in self.index_to_labels
 
     # ------------------------------------------------------------------

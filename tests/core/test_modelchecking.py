@@ -308,7 +308,7 @@ class TestModelChecking:
         assert "s=0" in shield_valuation.to_string()
 
     def test_shield_factory_dd_build_returns_shield_add(self):
-        from stormpy.shielding import ShieldConfig, ShieldFactory
+        from tempestpy.shielding import ShieldConfig, ShieldFactory
 
         factory = ShieldFactory(
             get_example_path("mdp", "maze_2.nm"),

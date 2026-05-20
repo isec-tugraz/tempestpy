@@ -36,12 +36,16 @@ def _build_constant_definitions(constants: Dict[str, Any]) -> str:
 
 class ShieldFactory:
     """
-    Construct a shield factory.
+    Entry point for computing probabilistic shields from PRISM models.
 
-    Construction modes:
-    1. Path + property  (builds model and runs model checking)
-    2. Pre-built model + prism program + property  (skips model build, runs model checking)
-    3. Pre-built model + prism program + check result  (skips model build and model checking)
+    A `ShieldFactory` parses or receives a PRISM MDP/SMG, runs model
+    checking to obtain per-action choice values, and converts those values
+    into `ShieldResult` bitmasks via `build` or `compute_mask`.
+
+    See Also
+    --------
+    ShieldConfig : Threshold and comparison-mode settings passed to `build`.
+    ShieldResult : The bitmask container returned by `build`.
     """
 
     def __init__(
@@ -54,6 +58,64 @@ class ShieldFactory:
         check_result: Optional[Any] = None,
         engine: str = "sparse",
     ) -> None:
+        """
+        Initialise a ShieldFactory.
+
+        Three construction modes are supported, selected automatically based
+        on the type of *model* and the keyword arguments supplied:
+
+        1. **Path mode** — pass a PRISM file path as *model*.
+           The factory parses the program, builds the model, and (if *property*
+           is given) runs model checking immediately.
+        2. **Pre-built model mode** — pass a stormpy model object as *model*
+           together with *prism_program* and *property*.
+           Model building is skipped; model checking runs on `build`.
+        3. **Pre-computed result mode** — pass a stormpy model object,
+           *prism_program*, and *check_result*.
+           Both model building and model checking are skipped; `compute_mask`
+           can be called directly.
+
+        Parameters
+        ----------
+        model :
+            Either a path string to a ``.prism`` / ``.nm`` file (mode 1),
+            or a pre-built stormpy sparse/symbolic MDP or SMG (modes 2 & 3).
+        property :
+            A PCTL/PRCTL property string, e.g. ``"Pmax=? [G safety]"``.
+            Required for modes 1 and 2; omit only when supplying *check_result*.
+        constants :
+            PRISM constant definitions, e.g. ``{"N": 3, "slippery": False}``.
+            Only used when the factory parses the PRISM program itself
+            (mode 1, or mode 2 when *prism_program* is a path string).
+        prism_program :
+            A parsed ``storm::prism::Program`` or a path string to the PRISM
+            source file. Required for modes 2 and 3.
+        check_result :
+            A pre-computed stormpy check result that already contains choice
+            values. When provided, model checking is skipped entirely (mode 3).
+        engine :
+            Backend representation. ``"sparse"`` (default) uses a sparse
+            explicit-state model; ``"dd"`` uses a symbolic BDD-based model.
+
+        Raises
+        ------
+        ValueError
+            If *engine* is not ``"sparse"`` or ``"dd"``.
+        TypeError
+            If a pre-built model is passed without *prism_program*, or if the
+            model type or engine/model combination is unsupported.
+
+        Examples
+        --------
+        Mode 1 — build everything from a file:
+
+        >>> factory = ShieldFactory("model.prism", property="Pmax=? [G safe]",
+        ...                         constants={"N": 5})
+        >>> result = factory.build(ShieldConfig(threshold=0.9))
+
+        Mode 3 — reuse an existing check result:
+
+        """
         self._property = property
         self._check_result = check_result
         if engine not in {"sparse", "dd"}:
@@ -105,10 +167,12 @@ class ShieldFactory:
 
     @property
     def model(self) -> Any:
+        """The stormpy model held by this factory."""
         return self._model
 
     @property
     def prism_program(self) -> Any:
+        """The parsed ``storm::prism::Program`` held by this factory."""
         return self._prism_program
 
     @property
@@ -117,6 +181,7 @@ class ShieldFactory:
 
     @property
     def prop(self) -> Optional[str]:
+        """The active PCTL property string, or ``None`` if not set."""
         return self._property
 
     @prop.setter
@@ -135,10 +200,15 @@ class ShieldFactory:
 
     @property
     def formula(self) -> Any:
+        """The parsed stormpy formula, or ``None`` before a property is set."""
         return getattr(self, "_formula", None)
 
     @property
     def optimality_type(self) -> Any:
+        """
+        The optimality direction (``Minimize`` / ``Maximize``) derived from
+        the formula, or ``None`` if no formula has been set.
+        """
         return getattr(self, "_optimality_type", None)
 
     # ---- Copy ----
@@ -181,8 +251,26 @@ class ShieldFactory:
 
     def build(self, config: ShieldConfig) -> Any:
         """
-        Run model checking (if not already done) and compute the action mask.
-        Returns None when loaded from a slim pickle (model not available).
+        Run model checking (if needed) and compute the action mask.
+
+        If model checking has not been performed yet, it is triggered here.
+        Subsequent calls with the same property reuse the cached result.
+
+        Parameters
+        ----------
+        config :
+            Threshold, comparison mode, and optional post-selector / action
+            lookup settings for the mask computation.
+
+        Returns
+        -------
+        ShieldResult
+            Per-state bitmasks encoding which actions are permitted.
+
+        Raises
+        ------
+        RuntimeError
+            If neither a formula nor a check result is available.
         """
         logger.trace(f"ShieldFactory.build called with {config=}")
         if self._model is None:
@@ -199,8 +287,26 @@ class ShieldFactory:
 
     def compute_mask(self, config: ShieldConfig) -> Any:
         """
-        Compute the action mask from already-extracted choice values.
-        Calls _extract_choice_values() if not already done.
+        Compute the action mask from an already-available check result.
+
+        Unlike `build`, this method does *not* run model checking.
+        A check result must be present.
+
+        Parameters
+        ----------
+        config :
+            Threshold, comparison mode, and optional post-selector / action
+            lookup settings.
+
+        Returns
+        -------
+        ShieldResult
+            Per-state bitmasks encoding which actions are permitted.
+
+        Raises
+        ------
+        RuntimeError
+            If no check result is available.
         """
         logger.trace(f"ShieldFactory.compute_mask called with {config=}")
         if self._model is None:
@@ -283,9 +389,9 @@ class ShieldFactory:
         self._check_result = result
 
     def _extract_choice_values(self) -> None:
-        """
-        Extract choice values, offsets and counts from the stored check result.
-        Guarded: no-op if already extracted.
+        """Extract and cache choice values, per-state offsets, and action counts.
+
+        No-op if already extracted. Called lazily by `compute_action_mask`.
         """
         if getattr(self, "_choice_values", None) is not None:
             logger.trace(
@@ -330,12 +436,14 @@ class ShieldFactory:
 
     @property
     def is_sparse(self) -> bool:
+        """``True`` when the factory operates in sparse-engine mode."""
         return self._sparse
 
     # ---- State lookup ----
 
     @property
     def state_lookup(self) -> StateValuationLookup:
+        """Lazy-initialised bidirectional map between state ids and PRISM valuations."""
         if getattr(self, "_state_lookup", None) is None:
             self._state_lookup = StateValuationLookup.from_model(
                 self._model,
@@ -344,11 +452,43 @@ class ShieldFactory:
         return self._state_lookup
 
     def get_choice_values_for_state(self, sid: int) -> np.ndarray:
+        """
+        Return the model-checked choice values for all actions in state *sid*.
+
+        Parameters
+        ----------
+        sid :
+            State index (0-based).
+
+        Returns
+        -------
+        numpy.ndarray
+            1-D array of floats, one entry per local action, in action order.
+        """
         start = self._choice_offsets[sid]
         end = self._choice_offsets[sid + 1]
         return self._choice_values[start:end]
 
     def get_state_id(self, values: dict) -> int:
+        """
+        Look up the state id for a given PRISM variable valuation.
+
+        Parameters
+        ----------
+        values :
+            Mapping of PRISM variable name to value,
+            e.g. ``{"x": 2, "y": 0, "done": False}``.
+
+        Returns
+        -------
+        int
+            The model state id corresponding to *values*.
+
+        Raises
+        ------
+        KeyError
+            If the valuation does not match any state.
+        """
         return self.state_lookup.get_state_id(values)
 
     # ---- Dangerous / Critical / Safe / Unsafe helpers
@@ -357,15 +497,76 @@ class ShieldFactory:
         return [self.state_lookup.values_for_state_id(sid) for sid in sids]
 
     def dangerous_states(self, *, mask: ShieldResult) -> list[dict]:
+        """
+        Return the PRISM valuations of all dangerous states in *mask*.
+
+        A state is *dangerous* when no action meets the shield threshold and
+        the fallback (best-value) action is used instead.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult` produced by `build` or `compute_mask`.
+
+        Returns
+        -------
+        list of dict
+            Each dict maps PRISM variable names to their values for one state.
+        """
         return self._states_with_valuations(mask.dangerous_states())
 
     def critical_states(self, *, mask: ShieldResult) -> list[dict]:
+        """
+        Return the PRISM valuations of all critical states in *mask*.
+
+        A state is *critical* when at least one action is blocked by the
+        threshold but at least one action still passes.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult` produced by `build` or `compute_mask`.
+
+        Returns
+        -------
+        list of dict
+            Each dict maps PRISM variable names to their values for one state.
+        """
         return self._states_with_valuations(mask.critical_states())
 
     def safe_states(self, *, mask: ShieldResult) -> list[dict]:
+        """
+        Return the PRISM valuations of all safe states in *mask*.
+
+        A state is *safe* when every action passes the shield threshold.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult` produced by `build` or `compute_mask`.
+
+        Returns
+        -------
+        list of dict
+            Each dict maps PRISM variable names to their values for one state.
+        """
         return self._states_with_valuations(mask.safe_states())
 
     def states_by_class(self, *, mask: ShieldResult) -> dict[str, list[dict]]:
+        """
+        Partition all states into the four shield classes with their valuations.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult` produced by `build` or `compute_mask`.
+
+        Returns
+        -------
+        dict
+            Keys are ``"safe"``, ``"critical"``, ``"dangerous"``, ``"unsafe"``.
+            Values are lists of valuation dicts (same format as `dangerous_states`).
+        """
         raw = mask.states_by_class()
         return {cls: self._states_with_valuations(sids) for cls, sids in raw.items()}
 
@@ -400,26 +601,105 @@ class ShieldFactory:
 
     # ---- Export helpers ----
 
-    def to_bitmask(self, mask: Any) -> Any:
+    def to_bitmask(self, mask: Any) -> dict[int, int]:
+        """
+        Convert *mask* to a ``{state_id: bitmask}`` dictionary.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult`.
+
+        Returns
+        -------
+        dict
+            Maps each state id to its packed integer bitmask.
+        """
         return export_mod.state_id_to_bitmask(mask)
 
-    def to_allowed_action_indices(self, mask: Any) -> Any:
+    def to_allowed_action_indices(self, mask: Any) -> dict[int, list[int]]:
+        """
+        Convert *mask* to a ``{state_id: [action_index, ...]}`` dictionary.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult`.
+
+        Returns
+        -------
+        dict
+            Maps each state id to the list of allowed local action indices.
+        """
         return export_mod.state_id_to_allowed_action_indices(self._model, mask)
 
-    def to_allowed_action_labels(self, mask: Any) -> Any:
+    def to_allowed_action_labels(self, mask: Any) -> dict[int, list]:
+        """
+        Convert *mask* to a ``{state_id: [frozenset(labels), ...]}`` dictionary.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult`.
+
+        Returns
+        -------
+        dict
+            Maps each state id to the list of label-sets for allowed actions.
+        """
         return export_mod.state_id_to_allowed_action_labels(self._model, mask)
 
-    def to_allowed_state_action_pairs(self, mask: Any) -> Any:
+    def to_allowed_state_action_pairs(self, mask: Any) -> list[tuple[int, int]]:
+        """
+        Return all allowed ``(state_id, local_action_index)`` pairs.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult`.
+
+        Returns
+        -------
+        list of tuple
+            Each entry is ``(state_id, action_index)``.
+        """
         return export_mod.allowed_state_action_pairs(self._model, mask)
 
-    def to_valuation_bitmask(self, mask: Any) -> Any:
+    def to_valuation_bitmask(self, mask: Any) -> dict:
+        """
+        Convert *mask* to a ``{valuation_key: bitmask}`` dictionary.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult`.
+
+        Returns
+        -------
+        dict
+            Maps each state's `StateValuationKey` tuple to its packed bitmask.
+        """
         return export_mod.valuation_to_bitmask(
             self._model,
             mask,
             self.state_lookup,
         )
 
-    def to_valuation_allowed_action_labels(self, mask: Any) -> Any:
+    def to_valuation_allowed_action_labels(self, mask: Any) -> dict:
+        """
+        Convert *mask* to a ``{valuation_key: [frozenset(labels), ...]}`` dictionary.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult`.
+
+        Returns
+        -------
+        dict
+            Maps each state's `StateValuationKey` to the list of label-sets
+            for allowed actions.
+        """
         return export_mod.valuation_to_allowed_action_labels(
             self._model,
             mask,
@@ -428,8 +708,14 @@ class ShieldFactory:
 
     def to_valuation_action_label_probability(self) -> dict:
         """
-        { valuation_key(state) -> { frozenset(action_labels): probability } }
-        for ALL actions, not just shield-allowed ones.
+        Map every state to all its actions and their model-checked probabilities.
+
+        Returns
+        -------
+        dict
+            ``{valuation_key: {frozenset(action_labels): probability}}`` for
+            *all* actions in each state, regardless of whether the shield
+            allows or blocks them.
         """
         return export_mod.valuation_to_action_label_probability(
             self._model,
@@ -445,6 +731,26 @@ class ShieldFactory:
         show_valuations: bool = True,
         action_ref: str = "labels",
     ) -> str:
+        """
+        Return a human-readable summary of *mask* for debugging.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult`.
+        max_states :
+            Maximum number of states to include in the output (default 25).
+        show_valuations :
+            If ``True`` (default), show PRISM variable values next to each state.
+        action_ref :
+            How to identify actions: ``"labels"`` (default) shows
+            ``frozenset(labels)``; ``"index"`` shows local action indices.
+
+        Returns
+        -------
+        str
+            Multi-line human-readable shield summary.
+        """
         return export_mod.pretty(
             self._model,
             mask,
@@ -455,4 +761,18 @@ class ShieldFactory:
         )
 
     def to_storm_format(self, mask: Any) -> str:
+        """
+        Render *mask* as a Storm-compatible shield text.
+
+        Parameters
+        ----------
+        mask :
+            A `ShieldResult`.
+
+        Returns
+        -------
+        str
+            Multi-line string matching Storm's shield output format, with
+            per-action choice values and valuation annotations.
+        """
         return export_mod.storm_format(self, mask)
