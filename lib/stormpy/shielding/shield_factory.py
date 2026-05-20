@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import os
-import pickle
-import tempfile
 from typing import Any, Optional, Dict
 
 from ._helpers import _sanitize_property
 from .masking import compute_action_mask, ShieldConfig, ShieldResult
 from .state_lookup import StateValuationLookup
 from . import export as export_mod
+from . import serialization as serial_mod
 
 import stormpy
 from stormpy import Environment
@@ -374,127 +372,31 @@ class ShieldFactory:
     # ---- Persistence ----
 
     def __getstate__(self) -> dict:
-        """
-        Pickle protocol. Two modes controlled by self._pickle_slim (set via save()):
-
-        slim=True  (default): drops the Storm model, serialises choice values and
-                              state lookup only — smallest file, fast inference only.
-        slim=False:           exports the Storm model as DRN bytes so it can be
-                              restored without re-building; also stores the prism file
-                              path so model checking can be re-run after loading.
-        """
-        slim = getattr(self, "_pickle_slim", True)
-        state: dict = {
-            "slim": slim,
-            "property": self._property,
-            "sparse": self._sparse,
-            "action_map": getattr(self, "action_map", None),
-        }
-        if slim:
-            self._extract_choice_values()
-            _ = self.state_lookup
-            state["state_lookup"] = self._state_lookup
-            state["choice_values"] = self._choice_values
-            state["choice_offsets"] = self._choice_offsets
-            state["choice_counts"] = self._choice_counts
-        else:
-            # Export Storm model as DRN bytes via a temp file
-            tmp = tempfile.NamedTemporaryFile(suffix=".drn", delete=False)
-            tmp.close()
-            try:
-                stormpy.export_to_drn(self._model, tmp.name)
-                with open(tmp.name, "rb") as f:
-                    state["drn_bytes"] = f.read()
-            finally:
-                os.unlink(tmp.name)
-            state["prism_file"] = getattr(self, "_model_path", None)
-            state["constants"] = getattr(self, "_constants", None)
-            # Include already-computed values so model checking is not forced on load
-            if self._check_result is not None and getattr(self, "_choice_values", None) is None:
-                self._extract_choice_values()
-            _ = self.state_lookup
-            state["state_lookup"] = getattr(self, "_state_lookup", None)
-            state["choice_values"] = getattr(self, "_choice_values", None)
-            state["choice_offsets"] = getattr(self, "_choice_offsets", None)
-            state["choice_counts"] = getattr(self, "_choice_counts", None)
-        return state
+        return serial_mod.get_state(self, slim=getattr(self, "_pickle_slim", True))
 
     def __setstate__(self, state: dict) -> None:
-        """Pickle protocol: restore from serialised state."""
-        slim = state.get("slim", True)
-        self._property = state["property"]
-        self._sparse = state["sparse"]
-        self.action_map = state.get("action_map")
-        self._check_result = None
-        self._formula = None
-        self._optimality_type = None
-        self._state_lookup = state.get("state_lookup")
-        self._choice_values = state.get("choice_values")
-        self._choice_offsets = state.get("choice_offsets")
-        self._choice_counts = state.get("choice_counts")
-        if slim:
-            self._model = None
-            self._prism_program = None
-            self._model_path = None
-            self._constants = None
-            logger.info(
-                "ShieldFactory loaded (slim) — Storm model not available. "
-                "State lookup and choice values are ready; model-dependent methods will fail."
-            )
-        else:
-            drn_bytes: bytes = state["drn_bytes"]
-            tmp = tempfile.NamedTemporaryFile(suffix=".drn", delete=False)
-            try:
-                tmp.write(drn_bytes)
-                tmp.close()
-                self._model = stormpy.build_model_from_drn(tmp.name)
-            finally:
-                os.unlink(tmp.name)
-            self._model_path = state.get("prism_file")
-            self._constants = state.get("constants")
-            if self._model_path is not None:
-                self._prism_program = self._parse_prism_program(
-                    self._model_path, self._constants
-                )
-                if self._property is not None:
-                    self._prepare_property(self._property)
-            else:
-                self._prism_program = None
-            logger.info(
-                "ShieldFactory loaded (full) — Storm model restored from DRN. "
-                "Call build() to run model checking on the restored model."
-            )
+        serial_mod.set_state(self, state)
 
     def save(self, path: str, *, slim: bool = True) -> None:
         """
         Persist this factory to a pickle file.
 
-        slim=True  (default): serialises choice values and state lookup only —
-                              smallest file, sufficient for inference.
-        slim=False:           also exports the Storm model as DRN bytes and stores
-                              the prism file path, so the factory is fully functional
-                              after loading without re-building the model.
+        slim=True  (default): choice values and state lookup only — smallest file.
+        slim=False:           DRN model bytes + prism file path — fully functional on load.
         """
-        self._pickle_slim = slim
-        try:
-            with open(path, "wb") as f:
-                pickle.dump(self, f)
-        finally:
-            del self._pickle_slim
-        logger.info(f"ShieldFactory saved to {path!r} (slim={slim})")
+        serial_mod.save(self, path, slim=slim)
 
     @classmethod
     def load(cls, path: str) -> "ShieldFactory":
         """
         Load a ShieldFactory saved with save().
 
-        slim=True saves: state lookup and choice values are ready for inference;
-                         the Storm model is not available.
-        slim=False saves: Storm model is restored from DRN; call build() to
+        slim=True saves:  state lookup and choice values ready for inference;
+                          Storm model not available.
+        slim=False saves: Storm model restored from DRN; call build() to
                           re-run model checking if fresh results are needed.
         """
-        with open(path, "rb") as f:
-            return pickle.load(f)
+        return serial_mod.load(path)
 
     # ---- Export helpers ----
 
