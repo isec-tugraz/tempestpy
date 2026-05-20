@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 # ---- DRN round-trip helpers ----
 
+
 def model_to_drn_bytes(model: Any) -> bytes:
     """Export a Storm model to DRN bytes via a temporary file."""
     tmp = tempfile.NamedTemporaryFile(suffix=".drn", delete=False)
@@ -37,7 +38,8 @@ def model_from_drn_bytes(drn_bytes: bytes) -> Any:
         os.unlink(tmp.name)
 
 
-# ---- Pickle state helpers (called from __getstate__ / __setstate__) ----
+# ---- Pickle state helpers ----
+
 
 def get_state(factory: ShieldFactory, slim: bool) -> dict:
     """
@@ -64,7 +66,10 @@ def get_state(factory: ShieldFactory, slim: bool) -> dict:
         state["drn_bytes"] = model_to_drn_bytes(factory._model)
         state["prism_file"] = getattr(factory, "_model_path", None)
         state["constants"] = getattr(factory, "_constants", None)
-        if factory._check_result is not None and getattr(factory, "_choice_values", None) is None:
+        if (
+            factory._check_result is not None
+            and getattr(factory, "_choice_values", None) is None
+        ):
             factory._extract_choice_values()
         _ = factory.state_lookup
         state["state_lookup"] = getattr(factory, "_state_lookup", None)
@@ -115,6 +120,7 @@ def set_state(factory: ShieldFactory, state: dict) -> None:
 
 
 # ---- High-level persistence ----
+
 
 def save(factory: ShieldFactory, path: str, slim: bool = True) -> None:
     """

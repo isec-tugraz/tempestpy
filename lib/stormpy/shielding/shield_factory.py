@@ -141,26 +141,25 @@ class ShieldFactory:
     def optimality_type(self) -> Any:
         return getattr(self, "_optimality_type", None)
 
-    # ---- Copy / clone ----
+    # ---- Copy ----
 
     def copy(self) -> "ShieldFactory":
-        """Shallow-clone config, share the underlying model."""
         new = object.__new__(ShieldFactory)
         new._model_path = getattr(self, "_model_path", None)
         new._constants = getattr(self, "_constants", None)
-        new._prism_program = self._prism_program   # shared
-        new._model = self._model                   # intentionally shared
+        new._prism_program = self._prism_program
+        new._model = self._model
         new._sparse = self._sparse
-        new._property = self._property             # str, immutable
+        new._property = self._property
         new._formula = getattr(self, "_formula", None)
         new._optimality_type = getattr(self, "_optimality_type", None)
         new._state_valuations = getattr(self, "_state_valuations", None)
         new._choice_labeling = getattr(self, "_choice_labeling", None)
-        new._state_lookup = getattr(self, "_state_lookup", None)  # shared
+        new._state_lookup = getattr(self, "_state_lookup", None)
         new._choice_values = getattr(self, "_choice_values", None)
         new._choice_offsets = getattr(self, "_choice_offsets", None)
         new._choice_counts = getattr(self, "_choice_counts", None)
-        new._check_result = None  # not carried over; recomputed on demand
+        new._check_result = None
         new.action_map = getattr(self, "action_map", None)
         return new
 
@@ -168,7 +167,6 @@ class ShieldFactory:
         return self.copy()
 
     def __deepcopy__(self, memo: dict) -> "ShieldFactory":
-        # deepcopy still shares the Storm model — treated as immutable data
         new = self.copy()
         memo[id(self)] = new
         return new
