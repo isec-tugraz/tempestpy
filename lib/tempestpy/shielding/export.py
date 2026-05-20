@@ -5,7 +5,7 @@ from typing import Any, Callable, FrozenSet, Mapping, Tuple
 
 import numpy as np
 
-from .masking import ShieldResult
+from .shield_result import ShieldResult
 
 
 # A hashable, stable key derived from state valuations.

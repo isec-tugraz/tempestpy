@@ -13,7 +13,8 @@ from typing import Any, Callable, Mapping, Optional
 import numpy as np
 
 from .shield_factory import ShieldFactory
-from .masking import ShieldConfig, ShieldResult
+from .masking import ShieldConfig
+from .shield_result import ShieldResult
 
 ObsToValuesFn = Callable[[Any, Optional[dict]], Mapping[str, Any]]
 

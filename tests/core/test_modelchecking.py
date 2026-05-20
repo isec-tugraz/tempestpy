@@ -308,7 +308,7 @@ class TestModelChecking:
         assert "s=0" in shield_valuation.to_string()
 
     def test_shield_factory_dd_build_returns_shield_add(self):
-        from tempestpy.shielding import ShieldConfig, ShieldFactory
+        from tempestpy.shielding import ShieldConfig, ShieldFactory, SymbolicShieldResult
 
         factory = ShieldFactory(
             get_example_path("mdp", "maze_2.nm"),
@@ -319,6 +319,7 @@ class TestModelChecking:
         shield = factory.build(ShieldConfig(threshold=0.7))
 
         assert not factory.is_sparse
+        assert isinstance(shield, SymbolicShieldResult)
         assert shield.bitmask_by_state.node_count > 0
         assert shield.bitmask_by_state.get_meta_variable("s").can_represent(0)
         assert shield.bitmask_by_state.query({"s": 0}) == 15
