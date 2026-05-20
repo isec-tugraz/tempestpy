@@ -17,6 +17,37 @@ ActionKey = str
 
 @dataclass(frozen=True, slots=True)
 class ShieldConfig:
+    """
+    Immutable configuration for a single shield computation.
+
+    Attributes
+    ----------
+    threshold :
+        The probability threshold. In ``"absolute"`` mode an action is allowed
+        when its choice value is ``>= threshold`` (maximise) or
+        ``<= threshold`` (minimise).  In ``"relative"`` mode the threshold is
+        multiplied by the per-state best value before comparison.
+        Defaults to ``1.0`` (only optimal actions pass).
+    comparison :
+        How to interpret *threshold*: ``"absolute"`` compares directly against
+        the model-checked probability; ``"relative"`` compares against
+        ``threshold * best_value`` for the current state.
+    post_selector :
+        Optional callable invoked by `ShieldResult.query_post` when the
+        agent's chosen action is blocked.  Signature:
+        ``(state_id: int, blocked_action: int) -> int``.
+        Required when using `PostShieldWrapper`.
+    action_lookup :
+        Optional `ActionLookup` that maps PRISM action labels to global RL
+        action indices.  When set, bitmask bits correspond to global indices
+        rather than local model action indices.
+
+    See Also
+    --------
+    ShieldFactory.build : Consumes a `ShieldConfig` to produce a `ShieldResult`.
+    ActionLookup : Maps PRISM labels to RL action indices.
+    """
+
     threshold: float = 1.0
     comparison: ComparisonMode = "absolute"
 
@@ -35,28 +66,47 @@ class ShieldConfig:
 @dataclass(frozen=True, slots=True)
 class ShieldResult:
     """
-    bitmask_by_state[sid]:
-      integer bitmask where bit i corresponds to:
-        - local mode:  the local action index i in model.states[sid].actions
-        - global mode: the global RL action index i from ActionLookup
+    Per-state action masks produced by `ShieldFactory.build`.
 
-    fallback_by_state[sid]:
-      non-zero only for dangerous states (no action meets threshold).
-      equals bitmask_by_state[sid] in that case, argmax action promoted
-      as last resort. zero for safe, critical, and unsafe states.
+    Attributes
+    ----------
+    config :
+        The `ShieldConfig` used to compute this result.
+    bitmask_by_state :
+        Integer bitmask per state.  Bit *i* is set when action *i* is allowed.
+        In *local* mode bit *i* corresponds to ``model.states[sid].actions[i]``;
+        in *global* mode (when `ShieldConfig.action_lookup` is set) bit *i*
+        corresponds to the global RL action index *i* from `ActionLookup`.
+    fallback_by_state :
+        Non-zero only for *dangerous* states (no action meets the threshold).
+        Holds a single-bit mask for the argmax/argmin action used as a last
+        resort.  Zero for safe, critical, and unsafe states.
+    nr_actions_by_state :
+        Total action count per state.  Equals ``len(state.actions)`` in local
+        mode and ``ActionLookup.nr_actions`` in global mode.
+    best_value_by_state :
+        The highest model-checked choice value across all actions per state.
+        ``None`` for DD (symbolic) shields.
+    bit_width :
+        Explicit bitmask width override, or ``None`` to infer from action count.
+    coalition_states :
+        Non-``None`` only for SMG models: the set of ego-coalition state ids.
+        States absent from this set are adversary/environment states with no mask.
 
-    nr_actions_by_state[sid]:
-      - local mode:  len(state.actions) for state sid
-      - global mode: ActionLookup.nr_actions (constant across all states)
+    Notes
+    -----
+    State classification is fully determined by ``bitmask``, ``fallback``,
+    and ``nr_actions``:
 
-    best_value_by_state[sid]:
-      the highest choice value across all actions in state sid.
+    * **unsafe** — ``bitmask == 0`` and ``fallback == 0`` (property violated)
+    * **dangerous** — ``fallback != 0`` (no action meets threshold; fallback used)
+    * **critical** — ``bitmask > 0`` and ``fallback == 0`` and ``popcount(bitmask) < nr_actions``
+    * **safe** — ``bitmask > 0`` and ``fallback == 0`` and ``popcount(bitmask) == nr_actions``
 
-    State classification (derivable from bitmask + fallback + nr_actions):
-      unsafe:    bitmask == 0 and fallback == 0   (property violated)
-      dangerous: bitmask > 0 and bitmask == fallback  (no action meets threshold)
-      critical:  bitmask > 0 and fallback == 0 and popcount(bitmask) < nr_actions
-      safe:      bitmask > 0 and fallback == 0 and popcount(bitmask) == nr_actions
+    See Also
+    --------
+    ShieldFactory.build : Produces a `ShieldResult`.
+    ShieldConfig : Configures the threshold and comparison mode.
     """
     config: ShieldConfig
     bitmask_by_state: list[int]
@@ -73,22 +123,79 @@ class ShieldResult:
     # ------------------------------------------------------------------
 
     def query_mask(self, sid: int) -> int:
-        """Pre-shielding: return the bitmask for the RL wrapper to apply."""
+        """
+        Return the effective bitmask for pre-shielding at state *sid*.
+
+        Falls back to `fallback_by_state` when no action meets the threshold
+        (dangerous state).
+
+        Parameters
+        ----------
+        sid :
+            State index.
+
+        Returns
+        -------
+        int
+            Packed bitmask of allowed action indices.
+        """
         bits = self.bitmask_by_state[sid]
         if bits != 0:
             return bits
         return self.fallback_by_state[sid]
 
-    def query_action(self, sid: int, agent_action: int, pvals: np.ndarray, **kwargs) -> int:
-        """Post-shielding: return agent_action if safe, else invoke post_selector."""
+    def query_post(self, sid: int, agent_action: int, **kwargs) -> int:
+        """
+        Return *agent_action* if it is allowed, otherwise invoke the post-selector.
+
+        Parameters
+        ----------
+        sid :
+            State index used to look up the bitmask.
+        agent_action :
+            The action chosen by the agent (local or global index).
+
+        Returns
+        -------
+        int
+            The original action if safe, or the replacement action from
+            `ShieldConfig.post_selector`.
+
+        Raises
+        ------
+        TypeError
+            If `ShieldConfig.post_selector` is ``None`` and the action is blocked.
+        """
         if self.bitmask_by_state[sid] & (1 << agent_action):
             return agent_action
-        return self.config.post_selector(pvals, **kwargs)
+        return self.config.post_selector(sid, agent_action, **kwargs)
 
     def is_action_allowed(self, sid: int, action_index: int) -> bool:
+        """
+        Return ``True`` when *action_index* is permitted in state *sid*.
+
+        Parameters
+        ----------
+        sid :
+            State index.
+        action_index :
+            Local or global action index depending on the bitmask mode.
+
+        Returns
+        -------
+        bool
+        """
         return bool(self.bitmask_by_state[sid] & (1 << action_index))
 
     def to_bitmask_dict(self) -> dict[int, int]:
+        """
+        Return a plain ``{state_id: bitmask}`` dictionary.
+
+        Returns
+        -------
+        dict
+            Maps each state id to its packed integer bitmask.
+        """
         return {sid: bits for sid, bits in enumerate(self.bitmask_by_state)}
 
     # ------------------------------------------------------------------
@@ -96,21 +203,37 @@ class ShieldResult:
     # ------------------------------------------------------------------
 
     def is_coalition_state(self, sid: int) -> bool:
-        """True for all states in non-SMG models; for SMGs, True only for ego-coalition states."""
+        """
+        Return ``True`` if *sid* belongs to the ego coalition.
+
+        Always ``True`` for non-SMG models.  For SMGs, ``False`` for
+        adversary/environment states that carry no mask.
+        """
         return self.coalition_states is None or sid in self.coalition_states
 
     def is_unsafe(self, sid: int) -> bool:
-        """property violated, no action available at all."""
+        """
+        Return ``True`` when the property is violated in state *sid*.
+
+        An unsafe state has no allowed action and no fallback
+        (``bitmask == 0`` and ``fallback == 0``).
+        """
         if self.coalition_states is not None and sid not in self.coalition_states:
             return False
         return self.bitmask_by_state[sid] == 0 and self.fallback_by_state[sid] == 0
 
     def is_dangerous(self, sid: int) -> bool:
-        """No action meets threshold."""
+        """
+        Return ``True`` when no action in state *sid* meets the threshold.
+
+        The fallback (best-value) action is used instead.
+        """
         return self.fallback_by_state[sid] != 0
 
     def is_critical(self, sid: int) -> bool:
-        """Some actions blocked by threshold."""
+        """
+        Return ``True`` when some — but not all — actions in state *sid* are blocked.
+        """
         bits = self.bitmask_by_state[sid]
         return (
             bits > 0
@@ -119,33 +242,51 @@ class ShieldResult:
         )
 
     def is_safe(self, sid: int) -> bool:
-        """All actions permitted."""
+        """Return ``True`` when all actions in state *sid* pass the threshold."""
         return (
             self.fallback_by_state[sid] == 0
             and self.bitmask_by_state[sid].bit_count() == self.nr_actions_by_state[sid]
         )
 
     def classify_state(self, sid: int) -> str:
-        """One of 'safe' | 'critical' | 'dangerous' | 'unsafe'."""
+        """
+        Return the shield class of state *sid*.
+
+        Returns
+        -------
+        str
+            One of ``"safe"``, ``"critical"``, ``"dangerous"``, or ``"unsafe"``.
+        """
         if self.is_unsafe(sid):    return "unsafe"
         if self.is_dangerous(sid): return "dangerous"
         if self.is_critical(sid):  return "critical"
         return "safe"
 
     def states_by_class(self) -> dict[str, list[int]]:
-        """Return {class_name: [sid, ...]} for all four classes."""
+        """
+        Partition all state ids into the four shield classes.
+
+        Returns
+        -------
+        dict
+            ``{"safe": [...], "critical": [...], "dangerous": [...], "unsafe": [...]}``,
+            where each value is a list of state ids.
+        """
         out = {"safe": [], "critical": [], "dangerous": [], "unsafe": []}
         for sid in range(len(self)):
             out[self.classify_state(sid)].append(sid)
         return out
 
     def dangerous_states(self) -> list[int]:
+        """Return the list of state ids classified as dangerous."""
         return [s for s in range(len(self)) if self.is_dangerous(s)]
 
     def critical_states(self) -> list[int]:
+        """Return the list of state ids classified as critical."""
         return [s for s in range(len(self)) if self.is_critical(s)]
 
     def safe_states(self) -> list[int]:
+        """Return the list of state ids classified as safe."""
         return [s for s in range(len(self)) if self.is_safe(s)]
 
     # ------------------------------------------------------------------

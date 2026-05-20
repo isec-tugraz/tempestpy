@@ -107,15 +107,39 @@ def _get_state_action_value(
 
 def state_id_to_bitmask(mask: ShieldResult) -> dict[int, int]:
     """
-    { state_id -> packed bitmask }, where bit i corresponds to the
-    local action index i in model.states[state_id].actions.
+    Convert a shield result to a ``{state_id: bitmask}`` dictionary.
+
+    Bit *i* in each bitmask corresponds to local action index *i* in
+    ``model.states[state_id].actions``.
+
+    Parameters
+    ----------
+    mask :
+        A `ShieldResult`.
+
+    Returns
+    -------
+    dict
+        Maps each state id to its packed integer bitmask.
     """
     return mask.to_bitmask_dict()
 
 
 def state_id_to_allowed_action_indices(model: Any, mask: ShieldResult) -> dict[int, list[int]]:
     """
-    { state_id -> [local_action_index, ...] }
+    Map each state id to the list of allowed local action indices.
+
+    Parameters
+    ----------
+    model :
+        The stormpy model associated with *mask*.
+    mask :
+        A `ShieldResult`.
+
+    Returns
+    -------
+    dict
+        ``{state_id: [action_index, ...]}``.
     """
     out: dict[int, list[int]] = {}
     for state in model.states:
@@ -127,7 +151,20 @@ def state_id_to_allowed_action_indices(model: Any, mask: ShieldResult) -> dict[i
 
 def state_id_to_allowed_action_labels(model: Any, mask: ShieldResult) -> dict[int, list[FrozenSet[str]]]:
     """
-    { state_id -> [frozenset(labels), ...] } aligned with allowed local action indices.
+    Map each state id to the label-sets of allowed actions.
+
+    Parameters
+    ----------
+    model :
+        The stormpy model associated with *mask*.
+    mask :
+        A `ShieldResult`.
+
+    Returns
+    -------
+    dict
+        ``{state_id: [frozenset(labels), ...]}``, aligned with allowed local
+        action indices.
     """
     out: dict[int, list[FrozenSet[str]]] = {}
     for state in model.states:
@@ -144,7 +181,19 @@ def allowed_state_action_pairs(
     mask: ShieldResult,
 ) -> list[tuple[int, int]]:
     """
-    List allowed (state_id, local_action_index) pairs.
+    Return all allowed ``(state_id, local_action_index)`` pairs.
+
+    Parameters
+    ----------
+    model :
+        The stormpy model associated with *mask*.
+    mask :
+        A `ShieldResult`.
+
+    Returns
+    -------
+    list of tuple
+        Each entry is ``(state_id, action_index)``.
     """
     pairs: list[tuple[int, int]] = []
     for state in model.states:
@@ -165,7 +214,21 @@ def valuation_to_bitmask(
     state_lookup: Any,
 ) -> dict[StateValuationKey, int]:
     """
-    { valuation_key(state) -> packed bitmask }
+    Map each state's valuation key to its packed bitmask.
+
+    Parameters
+    ----------
+    model :
+        The stormpy model associated with *mask*.
+    mask :
+        A `ShieldResult`.
+    state_lookup :
+        A `StateValuationLookup` (or compatible mapping) for the model.
+
+    Returns
+    -------
+    dict
+        ``{StateValuationKey: bitmask}``.
     """
     out: dict[StateValuationKey, int] = {}
     for state in model.states:
@@ -180,7 +243,21 @@ def valuation_to_allowed_action_labels(
     state_lookup: Any,
 ) -> dict[StateValuationKey, list[FrozenSet[str]]]:
     """
-    { valuation_key(state) -> [frozenset(labels), ...] } for allowed local action indices.
+    Map each state's valuation key to the label-sets of allowed actions.
+
+    Parameters
+    ----------
+    model :
+        The stormpy model associated with *mask*.
+    mask :
+        A `ShieldResult`.
+    state_lookup :
+        A `StateValuationLookup` for the model.
+
+    Returns
+    -------
+    dict
+        ``{StateValuationKey: [frozenset(labels), ...]}``.
     """
     out: dict[StateValuationKey, list[FrozenSet[str]]] = {}
     for state in model.states:
@@ -199,13 +276,29 @@ def valuation_to_allowed_action_labels_with_values(
     state_action_values: StateActionValueLookup,
 ) -> dict[StateValuationKey, dict[FrozenSet[str], float]]:
     """
-    { valuation_key(state) -> { action_labels: value, ... } }
+    Map each state's valuation key to a ``{action_labels: value}`` dict for allowed actions.
 
-    Uses local action indices internally.
+    Parameters
+    ----------
+    model :
+        The stormpy model associated with *mask*.
+    mask :
+        A `ShieldResult`.
+    state_lookup :
+        A `StateValuationLookup` for the model.
+    state_action_values :
+        Either a mapping ``{(state_id, action_index): float}`` or a callable
+        ``f(state_id, action_index) -> float``.
 
-    Note:
-      If multiple allowed actions in the same state have the same label set,
-      later entries overwrite earlier ones because dict keys must be unique.
+    Returns
+    -------
+    dict
+        ``{StateValuationKey: {frozenset(labels): value}}``.
+
+    Notes
+    -----
+    If multiple allowed actions in the same state share the same label set,
+    later entries overwrite earlier ones (dict keys must be unique).
     """
     out: dict[StateValuationKey, dict[FrozenSet[str], float]] = {}
     for state in model.states:
@@ -226,7 +319,21 @@ def valuation_to_allowed_action_ids(
     state_lookup: Any,
 ) -> dict[StateValuationKey, list[int]]:
     """
-    { valuation_key(state) -> [storm_action_id, ...] } for allowed local action indices.
+    Map each state's valuation key to the Storm action ids of allowed actions.
+
+    Parameters
+    ----------
+    model :
+        The stormpy model associated with *mask*.
+    mask :
+        A `ShieldResult`.
+    state_lookup :
+        A `StateValuationLookup` for the model.
+
+    Returns
+    -------
+    dict
+        ``{StateValuationKey: [storm_action_id, ...]}``.
     """
     out: dict[StateValuationKey, list[int]] = {}
     for state in model.states:
@@ -244,7 +351,18 @@ def valuation_to_allowed_action_ids(
 
 def mask_metadata(mask: ShieldResult) -> dict[str, Any]:
     """
-    Serialize the non-model parts of ShieldResult for logging/debugging.
+    Serialize the non-model parts of a `ShieldResult` for logging or debugging.
+
+    Parameters
+    ----------
+    mask :
+        A `ShieldResult`.
+
+    Returns
+    -------
+    dict
+        Contains ``"config"``, ``"nr_states"``, and (if available)
+        ``"best_value_by_state_summary"`` with min/max/mean statistics.
     """
     out = {
         "config": asdict(mask.config),
@@ -267,19 +385,31 @@ def valuation_to_action_label_probability(
     state_action_values: StateActionValueLookup,
 ) -> dict[StateValuationKey, dict[FrozenSet[str], float]]:
     """
-    { valuation_key(state) -> { frozenset(action_labels): probability, ... } }
+    Map every state to *all* its actions and their model-checked probabilities.
 
-    Maps every state valuation to ALL its actions and their choice values,
-    regardless of whether the shield would allow or block them.
+    Unlike `valuation_to_allowed_action_labels_with_values`, this function
+    includes blocked actions as well.
 
-    state_action_values:
-      Either a mapping {(state_id, local_action_index): float}
-      or a callable f(state_id, local_action_index) -> float.
-      ShieldFactory exposes this via get_choice_values_for_state(sid).
+    Parameters
+    ----------
+    model :
+        The stormpy model.
+    state_lookup :
+        A `StateValuationLookup` for the model.
+    state_action_values :
+        Either a mapping ``{(state_id, action_index): float}`` or a callable
+        ``f(state_id, action_index) -> float``.
+        `ShieldFactory.get_choice_values_for_state` provides a compatible callable.
 
-    Note:
-      If multiple actions in the same state share the same label set,
-      later entries overwrite earlier ones (dict keys must be unique).
+    Returns
+    -------
+    dict
+        ``{StateValuationKey: {frozenset(action_labels): probability}}``.
+
+    Notes
+    -----
+    If multiple actions in the same state share the same label set, later
+    entries overwrite earlier ones (dict keys must be unique).
     """
     out: dict[StateValuationKey, dict[FrozenSet[str], float]] = {}
     for state in model.states:
@@ -302,11 +432,28 @@ def pretty(
     action_ref: str = "labels",
 ) -> str:
     """
-    Human-readable compact view.
+    Return a human-readable summary of a shield mask.
 
-    action_ref:
-      - "labels": show frozenset(labels)
-      - "index":  show local action index
+    Parameters
+    ----------
+    model :
+        The stormpy model associated with *mask*.
+    mask :
+        A `ShieldResult`.
+    state_lookup :
+        A `StateValuationLookup` for the model.
+    max_states :
+        Maximum number of states to include (default 25).
+    show_valuations :
+        If ``True`` (default), show PRISM variable values next to each state id.
+    action_ref :
+        ``"labels"`` (default) to show ``frozenset(labels)`` per action;
+        ``"index"`` to show local action indices only.
+
+    Returns
+    -------
+    str
+        Multi-line human-readable shield summary.
     """
     if action_ref not in {"labels", "index"}:
         raise ValueError("action_ref must be one of: 'labels', 'index'")
@@ -355,13 +502,22 @@ def pretty(
 
 def storm_format(factory: Any, mask: ShieldResult) -> str:
     """
-    Produce a string matching Storm's shield text format.
+    Render a shield mask as a Storm-compatible shield text.
 
-    Shows all states where the shield blocks at least one action, with the
-    per-action choice values that drove the shielding decision.
+    Parameters
+    ----------
+    factory :
+        The `ShieldFactory` that produced *mask*.  Used to resolve choice
+        values and state valuations.
+    mask :
+        A `ShieldResult`.
 
-    Format per line:
-        {state_id}: [{var=val    & ...}]    {val}: ({idx} {label});    ...
+    Returns
+    -------
+    str
+        Multi-line string matching Storm's shield output format.
+        Each line shows ``state_id: [var=val & ...] val: (idx {label}); ...``
+        for every action and its model-checked probability.
     """
     cfg = mask.config
     comparison_name = "absolute" if cfg.comparison == "absolute" else "relative"
