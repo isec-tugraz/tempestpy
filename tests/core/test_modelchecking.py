@@ -281,7 +281,7 @@ class TestModelChecking:
 
         assert type(result) is stormpy.SymbolicQuantitativeCheckResult
         assert result.has_choice_values
-        shield_mask = result.compute_shield_mask(model, 0.5)
+        shield_mask = result.compute_mask_add(model, 0.5)
         assert shield_mask.node_count > 0
         assert "s" in shield_mask.meta_variable_names
         assert shield_mask.get_meta_variable("s").can_represent(0)
@@ -301,7 +301,7 @@ class TestModelChecking:
 
         assert type(result) is stormpy.SymbolicExactQuantitativeCheckResult
         assert result.has_choice_values
-        shield_mask = result.compute_shield_mask(model, stormpy.Rational("0.5"))
+        shield_mask = result.compute_mask_add(model, stormpy.Rational("0.5"))
         assert shield_mask.node_count > 0
         shield_valuation, shield_value = next(iter(shield_mask))
         assert shield_value == 0b1111
