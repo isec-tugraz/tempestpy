@@ -1,5 +1,6 @@
 from .shield_factory import ShieldFactory
-from .masking import ShieldConfig, ShieldResult
+from .masking import ShieldConfig
+from .shield_result import ExplicitShieldResult, ShieldResult, SymbolicShieldResult
 
 from .export import (
     state_id_to_bitmask,
@@ -17,6 +18,8 @@ __all__ = [
     "ShieldFactory",
     "ShieldConfig",
     "ShieldResult",
+    "ExplicitShieldResult",
+    "SymbolicShieldResult",
 
     "state_id_to_bitmask",
     "state_id_to_allowed_action_indices",

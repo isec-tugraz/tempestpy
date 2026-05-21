@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any, Optional, Dict
 
 from ._helpers import _sanitize_property
-from .masking import compute_action_mask, ShieldConfig, ShieldResult
+from .masking import compute_action_mask, ShieldConfig
+from .shield_result import ShieldResult
 from .state_lookup import StateValuationLookup
 from . import export as export_mod
 from . import serialization as serial_mod
