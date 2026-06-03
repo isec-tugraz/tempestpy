@@ -114,9 +114,12 @@ void define_typed_result(py::module& m, std::string const& vtSuffix) {
             .def_property_readonly("choice_values", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType> const& result) -> storm::dd::Add<storm::dd::DdType::Sylvan, ValueType> const& {
                 return result.getChoiceValues();
             }, "Choice/state-action values ADD.")
-            .def("compute_mask_add", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType> const& result, storm::models::symbolic::Mdp<storm::dd::DdType::Sylvan, ValueType> const& model, ValueType const& threshold, bool minimize) {
-                return storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>::computeMaskAdd(model, model.getTransitionMatrix(), result.getChoiceValues(), threshold, minimize);
-            }, py::arg("model"), py::arg("threshold"), py::arg("minimize") = false, "Compute a state-to-action shield bit mask from the stored choice values using the given threshold. An action is allowed if its value is at least the threshold, or at most the threshold if minimize is true.")
+            .def("compute_mask_add", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType> const& result, storm::models::symbolic::Mdp<storm::dd::DdType::Sylvan, ValueType> const& model, ValueType const& threshold, storm::OptimizationDirection direction) {
+                return storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>::computeMaskAdd(model, model.getTransitionMatrix(), result.getChoiceValues(), threshold, direction);
+            }, py::arg("model"), py::arg("threshold"), py::arg("direction") = storm::OptimizationDirection::Maximize, "Compute a state-to-action shield bit mask from the stored choice values using the given threshold.")
+            .def("compute_fallback_add", [](storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType> const& result, storm::models::symbolic::Mdp<storm::dd::DdType::Sylvan, ValueType> const& model, ValueType const& threshold, storm::OptimizationDirection direction) {
+                return storm::modelchecker::SymbolicQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>::computeFallbackAdd(model, model.getTransitionMatrix(), result.getChoiceValues(), threshold, direction);
+            }, py::arg("model"), py::arg("threshold"), py::arg("direction") = storm::OptimizationDirection::Maximize, "Compute a state-to-fallback-action bit mask from the stored choice values for states where no action passes the threshold.")
     ;
 
     py::class_<storm::modelchecker::HybridQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>, std::shared_ptr<storm::modelchecker::HybridQuantitativeCheckResult<storm::dd::DdType::Sylvan, ValueType>>>(m, ("Hybrid" + vtSuffix + "QuantitativeCheckResult").c_str(), "Hybrid quantitative model checking result", quantitativeCheckResult)

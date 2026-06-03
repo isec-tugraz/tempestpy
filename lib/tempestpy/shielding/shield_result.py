@@ -185,9 +185,9 @@ class SymbolicShieldResult(ShieldResult):
         return self.bitmask_add
 
     @property
-    def fallback_by_state(self) -> list[int]:
-        """Compatibility alias; symbolic fallback is queried via ADDs."""
-        return []
+    def fallback_by_state(self) -> Any:
+        """Compatibility alias for the ADD-backed symbolic fallback bitmask."""
+        return self.fallback_add
 
     @property
     def nr_actions_by_state(self) -> list[int]:
