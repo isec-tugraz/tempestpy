@@ -5,6 +5,8 @@ import numpy as np
 import stormpy
 from loguru import logger
 
+from loguru import logger
+
 from .action_lookup import ActionLookup
 from .choice_data import ChoiceData
 from .shield_result import ExplicitShieldResult, ShieldResult, SymbolicShieldResult
@@ -88,6 +90,7 @@ def compute_symbolic_action_mask(self, config: ShieldConfig) -> SymbolicShieldRe
         if self.optimality_type is not None
         else stormpy.OptimizationDirection.Maximize
     )
+    logger.trace(f"Computing symbolic shield mask with threshold {config.threshold} and direction {direction}")
     shield_mask = self._check_result.compute_mask_add(
         self._model, config.threshold, direction
     )
@@ -98,6 +101,7 @@ def compute_symbolic_action_mask(self, config: ShieldConfig) -> SymbolicShieldRe
         config=config,
         bitmask_add=shield_mask,
         fallback_add=fallback,
+        choice_values_add=self._check_result.choice_values,
         nr_actions=0,
     )
 

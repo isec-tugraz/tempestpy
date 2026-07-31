@@ -396,6 +396,7 @@ class ShieldFactory:
         logger.info(f"ShieldFactory._run_model_check: {str(self.formula.raw_formula)=}")
         env = Environment()
         env.modelchecker_environment.set_produce_choice_values()
+        env.solver_environment.set_force_exact(True)
         result = stormpy.model_checking(self._model, self._formula, environment=env)
         assert result.has_choice_values, (
             f"Choice values were not computed for '{self._formula.raw_formula}'"

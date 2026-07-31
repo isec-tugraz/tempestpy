@@ -160,6 +160,7 @@ class SymbolicShieldResult(ShieldResult):
 
     bitmask_add: Any = None
     fallback_add: Any = None
+    choice_values_add: Any = None
     nr_actions: int = 0
 
     def _get_bitmask(self, valuation: dict) -> int:
@@ -188,6 +189,16 @@ class SymbolicShieldResult(ShieldResult):
     def fallback_by_state(self) -> Any:
         """Compatibility alias for the ADD-backed symbolic fallback bitmask."""
         return self.fallback_add
+
+    @property
+    def choice_values(self) -> Any:
+        """The ADD-backed symbolic choice values."""
+        return self.choice_values_add
+
+    @property
+    def choice_values_by_state(self) -> Any:
+        """Compatibility alias for the ADD-backed symbolic choice values."""
+        return self.choice_values_add
 
     @property
     def nr_actions_by_state(self) -> list[int]:

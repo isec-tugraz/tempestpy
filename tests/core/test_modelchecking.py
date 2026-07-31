@@ -340,6 +340,10 @@ class TestModelChecking:
         assert shield.bitmask_by_state.query({"s": 0}) == 15
         assert shield.fallback_by_state is shield.fallback_add
         assert shield.fallback_by_state.query({"s": 0}) == 0
+        assert shield.choice_values is shield.choice_values_add
+        assert shield.choice_values_by_state is shield.choice_values_add
+        assert shield.choice_values_add.node_count > 0
+        assert "s" in shield.choice_values_add.meta_variable_names
         assert shield.nr_actions_by_state == []
 
     def test_model_checking_prism_hybrid_dtmc(self):
