@@ -65,28 +65,35 @@ class TestAbsoluteComparisonMinimize:
         result = bounded_min_factory.compute_mask(ShieldConfig(threshold=0.6))
         assert result.is_safe(13)
 
-    def test_dangerous_when_only_action_exceeds_threshold(self, bounded_min_factory):
-        # state 15 has a single action with pval 1.0
+    def test_unsafe_when_only_action_exceeds_threshold(self, bounded_min_factory):
+        # state 15 has a single action with pval 1.0, i.e. Pmin = 1: unsafe
+        # (risk 1), which takes precedence over dangerous.
         result = bounded_min_factory.compute_mask(ShieldConfig(threshold=0.5))
         assert result.bitmask_by_state[15] == 0
         assert result.fallback_by_state[15] == 0b1
-        assert result.is_dangerous(15)
+        assert result.is_unsafe(15)
+        assert not result.is_dangerous(15)
+        assert result.classify_state(15) == "unsafe"
 
 
 class TestRelativeComparisonMaximize:
     def test_best_value_zero_and_threshold_leq_one_allows_all(self, bounded_max_factory):
-        # state 0 pvals = [0.0, 0.0], p_best = 0.0
+        # state 0 pvals = [0.0, 0.0], p_best = 0.0: every action is allowed,
+        # but the state itself is unsafe (Pmax = 0), so it is never "safe".
         result = bounded_max_factory.compute_mask(
             ShieldConfig(threshold=0.5, comparison="relative")
         )
-        assert result.is_safe(0)
+        assert result.bitmask_by_state[0] == 0b11
+        assert result.is_unsafe(0)
+        assert not result.is_safe(0)
 
     def test_best_value_zero_and_threshold_gt_one_blocks_all(self, bounded_max_factory):
         result = bounded_max_factory.compute_mask(
             ShieldConfig(threshold=2.0, comparison="relative")
         )
         assert result.bitmask_by_state[0] == 0
-        assert result.is_dangerous(0)
+        assert result.is_unsafe(0)
+        assert not result.is_dangerous(0)
 
     def test_normal_relative_threshold(self, bounded_max_factory):
         # state 10 pvals = [0.144, 0.144, 0.648], p_best=0.648
@@ -98,18 +105,22 @@ class TestRelativeComparisonMaximize:
 
 class TestRelativeComparisonMinimize:
     def test_best_value_one_and_threshold_geq_one_allows_all(self, bounded_min_factory):
-        # state 15 pvals = [1.0], p_best = 1.0
+        # state 15 pvals = [1.0], p_best = 1.0: the action is allowed, but the
+        # state is unsafe (Pmin = 1).
         result = bounded_min_factory.compute_mask(
             ShieldConfig(threshold=1.0, comparison="relative")
         )
-        assert result.is_safe(15)
+        assert result.bitmask_by_state[15] == 0b1
+        assert result.is_unsafe(15)
+        assert not result.is_safe(15)
 
     def test_best_value_one_and_threshold_lt_one_blocks_all(self, bounded_min_factory):
         result = bounded_min_factory.compute_mask(
             ShieldConfig(threshold=0.5, comparison="relative")
         )
         assert result.bitmask_by_state[15] == 0
-        assert result.is_dangerous(15)
+        assert result.is_unsafe(15)
+        assert not result.is_dangerous(15)
 
     def test_normal_relative_threshold(self, bounded_min_factory):
         # state 13 pvals = [0.0, 0.0, 0.6], p_best = 0.0 -> threshold * 0 = 0

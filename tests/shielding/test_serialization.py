@@ -25,7 +25,7 @@ class TestSlimSaveLoad:
 
         loaded = ShieldFactory.load(path)
         assert loaded._model is None
-        assert loaded._choice_values is not None
+        assert loaded._choice_data is not None
 
         loaded_values = loaded.get_choice_values_for_state(3)
         original_values = sparse_factory.get_choice_values_for_state(3)
@@ -33,14 +33,21 @@ class TestSlimSaveLoad:
 
         assert loaded.get_state_id(sparse_factory.state_lookup.values_for_state_id(5)) == 5
 
-    def test_slim_load_fails_on_model_dependent_calls(self, sparse_factory, tmp_path):
-        sparse_factory.build(ShieldConfig(threshold=0.9))
+    def test_slim_load_computes_masks_but_fails_on_model_dependent_calls(
+        self, sparse_factory, tmp_path
+    ):
+        expected = sparse_factory.build(ShieldConfig(threshold=0.9))
         path = str(tmp_path / "shield_slim.pkl")
         sparse_factory.save(path, slim=True)
 
         loaded = ShieldFactory.load(path)
+        # masks are computed from the stored ChoiceData, no Storm model needed
+        mask = loaded.compute_mask(ShieldConfig(threshold=0.9))
+        assert mask.bitmask_by_state == expected.bitmask_by_state
+        assert mask.fallback_by_state == expected.fallback_by_state
+        # re-checking needs the PRISM program
         with pytest.raises(RuntimeError):
-            loaded.compute_mask(ShieldConfig(threshold=0.9))
+            loaded.prop = 'Pmin=? [F "goal"]'
 
 
 class TestFullSaveLoad:

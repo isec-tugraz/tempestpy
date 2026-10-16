@@ -107,9 +107,8 @@ class TestPropSetter:
         # unrelated label ("target") would fail model checking entirely.
         sparse_factory.prop = 'Pmin=? [F "goal"]'
         assert sparse_factory._check_result is None
-        assert sparse_factory._choice_values is None
-        assert sparse_factory._choice_offsets is None
-        assert sparse_factory._choice_counts is None
+        assert sparse_factory._choice_data is None
+        assert sparse_factory._unsafe_state_ids is None
 
 
 class TestCopy:
@@ -175,9 +174,10 @@ class TestStateClassification:
         dangerous = smg_factory.dangerous_states(mask=mask)
         safe = smg_factory.safe_states(mask=mask)
         critical = smg_factory.critical_states(mask=mask)
-        assert {tuple(sorted(v.items())) for v in dangerous} == {
-            (("s", 1),), (("s", 3),)
-        }
+        unsafe = smg_factory.unsafe_states()
+        # state 3 has risk 1 and is reported as unsafe, not dangerous
+        assert {tuple(sorted(v.items())) for v in dangerous} == {(("s", 1),)}
+        assert unsafe == [{"s": 3}]
         assert {tuple(sorted(v.items())) for v in safe} == {
             (("s", 0),), (("s", 2),)
         }
@@ -186,9 +186,10 @@ class TestStateClassification:
     def test_states_by_class(self, smg_factory):
         mask = smg_factory.build(ShieldConfig(threshold=0.5))
         classes = smg_factory.states_by_class(mask=mask)
-        assert set(classes.keys()) == {"safe", "critical", "dangerous"}
+        assert set(classes.keys()) == {"safe", "critical", "dangerous", "unsafe"}
         assert len(classes["safe"]) == 2
-        assert len(classes["dangerous"]) == 2
+        assert len(classes["dangerous"]) == 1
+        assert len(classes["unsafe"]) == 1
 
 
 class TestExportDelegation:
