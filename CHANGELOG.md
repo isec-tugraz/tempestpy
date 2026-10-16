@@ -25,6 +25,7 @@ Requires Storm version >= 1.12.0.
 - Developer: unified declaration of (parametric) models
 - Developer: Markdown support in documentation via Myst
 - Developer: weekly CI tests for wheel generation
+- Shielding: added unsafe states (risk 1, i.e. `Pmax>0`/`Pmin>=1` fails/holds) via `ShieldFactory.unsafe_states()`; `states_by_class` partitions states into safe/critical/dangerous/unsafe. Behaviour change: `dangerous_states()` no longer includes unsafe states, and `unsafe` now means risk 1 instead of 'no allowed action and no fallback'.
 - Developer: consistent use of `#pragma once`
 - Developer: automated formatting of C++ code via clang-format
 

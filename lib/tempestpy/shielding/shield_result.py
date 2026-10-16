@@ -32,6 +32,10 @@ class ShieldResult(ABC):
     def _get_nr_actions(self, state: Any) -> int:
         ...
 
+    @abstractmethod
+    def _is_unsafe(self, state: Any) -> bool:
+        ...
+
     def query_mask(self, state: Any) -> int:
         """Return the effective pre-shielding bitmask for *state*."""
         bits = self._get_bitmask(state)
@@ -57,15 +61,17 @@ class ShieldResult(ABC):
         return self.coalition_states is None or sid in self.coalition_states
 
     def is_unsafe(self, state: Any) -> bool:
-        """Return true when no action is available and no fallback exists."""
-        return self._get_bitmask(state) == 0 and self._get_fallback(state) == 0
+        """Return true when the state violates the property outright (risk 1)."""
+        return self._is_unsafe(state)
 
     def is_dangerous(self, state: Any) -> bool:
         """Return true when no action met the threshold and fallback is used."""
-        return self._get_fallback(state) != 0
+        return not self._is_unsafe(state) and self._get_fallback(state) != 0
 
     def is_critical(self, state: Any) -> bool:
         """Return true when some but not all actions are blocked."""
+        if self._is_unsafe(state):
+            return False
         bits = self._get_bitmask(state)
         return (
             bits > 0
@@ -76,12 +82,17 @@ class ShieldResult(ABC):
     def is_safe(self, state: Any) -> bool:
         """Return true when all actions are allowed."""
         return (
-            self._get_fallback(state) == 0
+            not self._is_unsafe(state)
+            and self._get_fallback(state) == 0
             and self._get_bitmask(state).bit_count() == self._get_nr_actions(state)
         )
 
     def classify_state(self, state: Any) -> str:
-        """Return one of ``safe``, ``critical``, ``dangerous``, or ``unsafe``."""
+        """
+        Return one of ``safe``, ``critical``, ``dangerous``, or ``unsafe``.
+
+        ``unsafe`` takes precedence, so the four classes partition the states.
+        """
         if self.is_unsafe(state):
             return "unsafe"
         if self.is_dangerous(state):
@@ -99,6 +110,7 @@ class ExplicitShieldResult(ShieldResult):
     fallback_by_state: list[int] = field(default_factory=list)
     nr_actions_by_state: list[int] = field(default_factory=list)
     best_value_by_state: Optional[np.ndarray] = None
+    unsafe_state_ids: frozenset = frozenset()
 
     def _get_bitmask(self, sid: int) -> int:
         return self.bitmask_by_state[sid]
@@ -109,10 +121,8 @@ class ExplicitShieldResult(ShieldResult):
     def _get_nr_actions(self, sid: int) -> int:
         return self.nr_actions_by_state[sid]
 
-    def is_unsafe(self, sid: int) -> bool:
-        if self.coalition_states is not None and sid not in self.coalition_states:
-            return False
-        return super().is_unsafe(sid)
+    def _is_unsafe(self, sid: int) -> bool:
+        return sid in self.unsafe_state_ids
 
     def to_bitmask_dict(self) -> dict[int, int]:
         return {sid: bits for sid, bits in enumerate(self.bitmask_by_state)}
@@ -127,6 +137,9 @@ class ExplicitShieldResult(ShieldResult):
         for sid in range(len(self)):
             out[self.classify_state(sid)].append(sid)
         return out
+
+    def unsafe_states(self) -> list[int]:
+        return sorted(self.unsafe_state_ids)
 
     def dangerous_states(self) -> list[int]:
         return [sid for sid in range(len(self)) if self.is_dangerous(sid)]
@@ -156,6 +169,10 @@ class SymbolicShieldResult(ShieldResult):
         if self.fallback_add is None:
             return 0
         return int(self.fallback_add.query(valuation))
+
+    def _is_unsafe(self, valuation: dict) -> bool:
+        # Unsafe states are not tracked for DD shields yet.
+        return False
 
     def _get_nr_actions(self, valuation: dict) -> int:
         if self.nr_actions > 0:

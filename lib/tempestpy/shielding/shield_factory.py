@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Optional, Dict
 
 from ._helpers import _sanitize_property
@@ -121,6 +122,7 @@ class ShieldFactory:
         self._property = property
         self._check_result = check_result
         self._choice_data: Optional[ChoiceData] = None
+        self._unsafe_state_ids = None
         if engine not in {"sparse", "dd"}:
             raise ValueError(f"Selected engine {engine} is not supported")
         self._sparse = engine == "sparse"
@@ -203,6 +205,7 @@ class ShieldFactory:
         # Invalidate cached results since the property changed
         self._check_result = None
         self._choice_data = None
+        self._unsafe_state_ids = None
 
     @property
     def formula(self) -> Any:
@@ -234,6 +237,7 @@ class ShieldFactory:
         new._state_lookup = getattr(self, "_state_lookup", None)
         new._choice_data = getattr(self, "_choice_data", None)
         new._check_result = None
+        new._unsafe_state_ids = None
         new.action_map = getattr(self, "action_map", None)
         return new
 
@@ -429,6 +433,64 @@ class ShieldFactory:
         """The stored `ChoiceData`, or ``None`` if no model checking has happened yet."""
         return self._choice_data
 
+    _PROB_OPERATOR = re.compile(r"\b(Pmax|Pmin)\s*=\s*\?")
+
+    def _qualitative_unsafe_property(self) -> str:
+        """
+        Derive the qualitative query whose truth vector identifies unsafe states.
+
+        ``Pmax=? [phi]`` becomes ``Pmax>0 [phi]`` and ``Pmin=? [phi]`` becomes
+        ``Pmin>=1 [phi]``; everything else (e.g. a ``<<coalition>>`` prefix) is kept.
+        """
+        prop = _sanitize_property(self._property)
+        match = self._PROB_OPERATOR.search(prop)
+        if match is None:
+            raise ValueError(
+                f"Cannot derive unsafe-state query from property {self._property!r}: "
+                "expected a 'Pmax=?' or 'Pmin=?' operator"
+            )
+        is_minimize = self.optimality_type == stormpy.OptimizationDirection.Minimize
+        operator = "Pmin>=1" if is_minimize else "Pmax>0"
+        return prop[: match.start()] + operator + prop[match.end() :]
+
+    def _get_unsafe_state_ids(self) -> frozenset:
+        """
+        Return (and cache) the ids of all unsafe states, i.e. states with risk 1.
+
+        The property ``Pmax=? [phi]`` is checked as ``Pmax>0 [phi]`` (unsafe iff
+        false) and ``Pmin=? [phi]`` as ``Pmin>=1 [phi]`` (unsafe iff true); a
+        ``<<coalition>>`` prefix is kept. Storm's own qualitative results are
+        used and no tolerance is added. Unbounded F/G are exact; bounded F is
+        exact on the zero side and numeric on the one side for MDPs.
+        """
+        if getattr(self, "_unsafe_state_ids", None) is not None:
+            return self._unsafe_state_ids
+        if not self.is_sparse:
+            raise NotImplementedError("unsafe states are not supported for engine='dd'")
+        if self._property is None or getattr(self, "_formula", None) is None:
+            raise RuntimeError("Cannot compute unsafe states: no property set.")
+        if self._model is None:
+            raise RuntimeError("Cannot compute unsafe states: Storm model not available.")
+
+        is_minimize = self.optimality_type == stormpy.OptimizationDirection.Minimize
+        qualitative = self._qualitative_unsafe_property()
+        logger.trace(f"ShieldFactory._get_unsafe_state_ids: checking {qualitative!r}")
+        formula = stormpy.parse_properties_for_prism_program(
+            qualitative, self._prism_program
+        )[0]
+        result = stormpy.model_checking(self._model, formula)
+        if result is None:
+            raise NotImplementedError(
+                f"Storm cannot check {qualitative!r} on this model "
+                "(e.g. step-bounded properties on SMGs)"
+            )
+        truth = [bool(result.at(s)) for s in range(int(self._model.nr_states))]
+        # Pmin>=1 holds exactly for unsafe states; Pmax>0 fails exactly for them.
+        self._unsafe_state_ids = frozenset(
+            s for s, holds in enumerate(truth) if holds == is_minimize
+        )
+        return self._unsafe_state_ids
+
     # ---- Assertions ----
 
     def _assert_supported_model(self, model: Any) -> None:
@@ -511,12 +573,35 @@ class ShieldFactory:
     def _states_with_valuations(self, sids: list[int]) -> list[dict]:
         return [self.state_lookup.values_for_state_id(sid) for sid in sids]
 
+    def unsafe_states(self) -> list[dict]:
+        """
+        Return the PRISM valuations of all unsafe states.
+
+        A state is *unsafe* when it cannot satisfy the property at all
+        (risk 1): ``Pmax(phi) = 0`` for maximising properties, ``Pmin = 1``
+        for minimising ones. Unsafe takes precedence over the other classes.
+        This does not depend on a `ShieldConfig`, so no mask is needed.
+
+        The result comes from Storm's qualitative check (``Pmax>0`` /
+        ``Pmin>=1``) without any added tolerance. Unbounded F/G are exact;
+        bounded F on MDPs is exact on the zero side and numeric on the one
+        side; bounded SMG properties are unsupported by Storm here.
+        ``engine="dd"`` raises ``NotImplementedError``.
+
+        Returns
+        -------
+        list of dict
+            Each dict maps PRISM variable names to their values for one state.
+        """
+        return self._states_with_valuations(sorted(self._get_unsafe_state_ids()))
+
     def dangerous_states(self, *, mask: ShieldResult) -> list[dict]:
         """
         Return the PRISM valuations of all dangerous states in *mask*.
 
         A state is *dangerous* when no action meets the shield threshold and
-        the fallback (best-value) action is used instead.
+        the fallback (best-value) action is used instead. Unsafe states are
+        excluded.
 
         Parameters
         ----------

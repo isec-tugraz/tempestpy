@@ -43,6 +43,16 @@ def model_from_drn_bytes(drn_bytes: bytes) -> Any:
 FORMAT_VERSION = 2
 
 
+def _unsafe_ids_or_none(factory: ShieldFactory) -> Any:
+    """Unsafe state ids if they are available or computable, else ``None``."""
+    cached = getattr(factory, "_unsafe_state_ids", None)
+    if cached is not None:
+        return cached
+    if factory._sparse and factory._property is not None and factory._model is not None:
+        return factory._get_unsafe_state_ids()
+    return None
+
+
 def get_state(factory: ShieldFactory, slim: bool) -> dict:
     """
     Build the pickle state dict for factory.
@@ -65,6 +75,7 @@ def get_state(factory: ShieldFactory, slim: bool) -> dict:
         "action_map": getattr(factory, "action_map", None),
         "state_lookup": factory.state_lookup,
         "choice_data": factory._choice_data,
+        "unsafe_state_ids": _unsafe_ids_or_none(factory),
     }
     if not slim:
         state["drn_bytes"] = model_to_drn_bytes(factory._model)
@@ -90,6 +101,7 @@ def set_state(factory: ShieldFactory, state: dict) -> None:
     factory._optimality_type = None
     factory._state_lookup = state["state_lookup"]
     factory._choice_data = state["choice_data"]
+    factory._unsafe_state_ids = state.get("unsafe_state_ids")
     if slim:
         factory._model = None
         factory._prism_program = None

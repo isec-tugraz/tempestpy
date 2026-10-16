@@ -3,6 +3,7 @@ from typing import Callable, Literal, Optional
 import numpy as np
 
 import stormpy
+from loguru import logger
 
 from .action_lookup import ActionLookup
 from .choice_data import ChoiceData
@@ -95,14 +96,24 @@ def compute_explicit_action_mask(self, config: ShieldConfig) -> ExplicitShieldRe
         if getattr(self, "_choice_data", None) is None:
             self._run_model_check()
     self._extract_choice_values()
-    return compute_explicit_mask(self._choice_data, config)
+    if getattr(self, "_unsafe_state_ids", None) is not None or self.formula is not None:
+        unsafe_state_ids = self._get_unsafe_state_ids()
+    else:
+        logger.warning("No property available; no states are classified as unsafe.")
+        unsafe_state_ids = frozenset()
+    return compute_explicit_mask(self._choice_data, config, unsafe_state_ids)
 
 
-def compute_explicit_mask(data: ChoiceData, config: ShieldConfig) -> ExplicitShieldResult:
+def compute_explicit_mask(
+    data: ChoiceData,
+    config: ShieldConfig,
+    unsafe_state_ids: frozenset = frozenset(),
+) -> ExplicitShieldResult:
     """
     Compute an explicit shield mask from stored choice data alone.
 
-    Pure function of *data* and *config*; needs no Storm model.
+    Pure function of *data*, *config* and *unsafe_state_ids*; needs no Storm model.
+    Unsafe states are not derivable from the choice data, so the caller supplies them.
     """
     action_lookup: Optional[ActionLookup] = config.action_lookup
     nr_actions_global: Optional[int] = len(action_lookup) if action_lookup is not None else None
@@ -196,4 +207,5 @@ def compute_explicit_mask(data: ChoiceData, config: ShieldConfig) -> ExplicitShi
         nr_actions_by_state=nr_actions_by_state,
         best_value_by_state=best_by_state,
         coalition_states=coalition_states,
+        unsafe_state_ids=unsafe_state_ids,
     )
