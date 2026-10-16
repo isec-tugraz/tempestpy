@@ -341,7 +341,12 @@ class ShieldFactory:
 
     def _build_model_from_prism(self) -> Any:
         logger.trace("ShieldFactory._build_model_from_prism called")
-        options = stormpy.BuilderOptions(True, True)
+        if self.formula is not None:
+            options = stormpy.BuilderOptions([self.formula.raw_formula])
+            options.set_build_all_labels()
+            options.set_build_all_reward_models()
+        else:
+            options = stormpy.BuilderOptions(True, True)
         options.set_build_state_valuations()
         options.set_build_choice_labels()
         if self.is_sparse:
