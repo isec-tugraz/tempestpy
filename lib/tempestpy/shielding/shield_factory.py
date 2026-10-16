@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional, Dict
 
 from ._helpers import _sanitize_property
+from .choice_data import ChoiceData
 from .masking import compute_action_mask, ShieldConfig
 from .shield_result import ShieldResult
 from .state_lookup import StateValuationLookup
@@ -119,6 +120,7 @@ class ShieldFactory:
         """
         self._property = property
         self._check_result = check_result
+        self._choice_data: Optional[ChoiceData] = None
         if engine not in {"sparse", "dd"}:
             raise ValueError(f"Selected engine {engine} is not supported")
         self._sparse = engine == "sparse"
@@ -191,13 +193,16 @@ class ShieldFactory:
         if value == self._property:
             logger.trace("ShieldFactory.prop.setter: property unchanged, skipping")
             return
+        if self._prism_program is None:
+            raise RuntimeError(
+                "Cannot change the property of a slim-loaded ShieldFactory: "
+                "no PRISM program available. Load with slim=False or create a new factory."
+            )
         self._property = value
         self._prepare_property(value)
         # Invalidate cached results since the property changed
         self._check_result = None
-        self._choice_values = None
-        self._choice_offsets = None
-        self._choice_counts = None
+        self._choice_data = None
 
     @property
     def formula(self) -> Any:
@@ -227,9 +232,7 @@ class ShieldFactory:
         new._state_valuations = getattr(self, "_state_valuations", None)
         new._choice_labeling = getattr(self, "_choice_labeling", None)
         new._state_lookup = getattr(self, "_state_lookup", None)
-        new._choice_values = getattr(self, "_choice_values", None)
-        new._choice_offsets = getattr(self, "_choice_offsets", None)
-        new._choice_counts = getattr(self, "_choice_counts", None)
+        new._choice_data = getattr(self, "_choice_data", None)
         new._check_result = None
         new.action_map = getattr(self, "action_map", None)
         return new
@@ -274,15 +277,17 @@ class ShieldFactory:
             If neither a formula nor a check result is available.
         """
         logger.trace(f"ShieldFactory.build called with {config=}")
-        if self._model is None:
-            logger.trace("ShieldFactory.build called on a loaded factory.")
-            return None
-        if self._check_result is None and getattr(self, "_formula", None) is None:
-            raise RuntimeError(
-                "Cannot build shield: no formula and no check result available. "
-                "Pass a property string."
-            )
-        if self._check_result is None:
+        if self._check_result is None and self._choice_data is None:
+            if self._model is None:
+                raise RuntimeError(
+                    "Cannot build shield: this factory has neither a Storm model nor "
+                    "stored choice values."
+                )
+            if getattr(self, "_formula", None) is None:
+                raise RuntimeError(
+                    "Cannot build shield: no formula and no check result available. "
+                    "Pass a property string."
+                )
             self._run_model_check()
         return self.compute_mask(config)
 
@@ -310,12 +315,9 @@ class ShieldFactory:
             If no check result is available.
         """
         logger.trace(f"ShieldFactory.compute_mask called with {config=}")
-        if self._model is None:
-            raise RuntimeError(
-                "Cannot compute mask: Storm model not available. "
-                "Load with slim=False to include the model in the pickle."
-            )
-        if self._check_result is None and getattr(self, "_choice_values", None) is None:
+        if not self.is_sparse and self._model is None:
+            raise RuntimeError("Cannot compute mask: Storm model not available.")
+        if self._check_result is None and self._choice_data is None:
             raise RuntimeError(
                 "Cannot compute mask: no check result or pre-extracted choice values. "
                 "Call build() first."
@@ -397,29 +399,35 @@ class ShieldFactory:
         self._check_result = result
 
     def _extract_choice_values(self) -> None:
-        """Extract and cache choice values, per-state offsets, and action counts.
+        """Extract and cache the `ChoiceData` snapshot from the check result.
 
         No-op if already extracted. Called lazily by `compute_action_mask`.
         """
-        if getattr(self, "_choice_values", None) is not None:
+        if self._choice_data is not None:
             logger.trace(
                 "ShieldFactory._extract_choice_values: already extracted, skipping"
             )
             return
+        if self._check_result is None:
+            self._run_model_check()
         logger.trace(
             "ShieldFactory._extract_choice_values: extracting from check result"
         )
-        result = self._check_result
-        choice_vals = np.asarray(result.get_choice_values(), dtype=float)
-        counts = np.fromiter((len(s.actions) for s in self._model.states), dtype=int)
-        offsets = np.concatenate(([0], np.cumsum(counts)))
-        assert offsets[-1] == choice_vals.size, (
-            f"Choice value count mismatch: {choice_vals.size} values vs "
-            f"{offsets[-1]} expected from state action counts"
+        is_minimize = (
+            self.optimality_type is not None
+            and self.optimality_type == stormpy.OptimizationDirection.Minimize
         )
-        self._choice_values = choice_vals
-        self._choice_offsets = offsets
-        self._choice_counts = counts
+        self._choice_data = ChoiceData.from_model(
+            self._model,
+            self._check_result,
+            formula=self.formula,
+            is_minimize=is_minimize,
+        )
+
+    @property
+    def choice_data(self) -> Optional[ChoiceData]:
+        """The stored `ChoiceData`, or ``None`` if no model checking has happened yet."""
+        return self._choice_data
 
     # ---- Assertions ----
 
@@ -473,9 +481,8 @@ class ShieldFactory:
         numpy.ndarray
             1-D array of floats, one entry per local action, in action order.
         """
-        start = self._choice_offsets[sid]
-        end = self._choice_offsets[sid + 1]
-        return self._choice_values[start:end]
+        self._extract_choice_values()
+        return self._choice_data.values_for_state(sid)
 
     def get_state_id(self, values: dict) -> int:
         """

@@ -40,58 +40,56 @@ def model_from_drn_bytes(drn_bytes: bytes) -> Any:
 
 # ---- Pickle state helpers ----
 
+FORMAT_VERSION = 2
+
 
 def get_state(factory: ShieldFactory, slim: bool) -> dict:
     """
     Build the pickle state dict for factory.
 
-    slim=True:  choice values + state lookup only (no Storm model).
-    slim=False: DRN-serialised Storm model + prism file path for re-checking,
-                plus any already-computed choice values.
+    slim=True:  `ChoiceData` + state lookup only (no Storm model); enough to
+                compute masks and run the shielding wrappers.
+    slim=False: additionally the DRN-serialised Storm model + prism file path
+                for re-checking.
     """
+    if not factory.is_sparse:
+        raise NotImplementedError(
+            "Saving a ShieldFactory with engine='dd' is not supported yet."
+        )
+    factory._extract_choice_values()
     state: dict = {
+        "format_version": FORMAT_VERSION,
         "slim": slim,
         "property": factory._property,
         "sparse": factory._sparse,
         "action_map": getattr(factory, "action_map", None),
+        "state_lookup": factory.state_lookup,
+        "choice_data": factory._choice_data,
     }
-    if slim:
-        factory._extract_choice_values()
-        _ = factory.state_lookup
-        state["state_lookup"] = factory._state_lookup
-        state["choice_values"] = factory._choice_values
-        state["choice_offsets"] = factory._choice_offsets
-        state["choice_counts"] = factory._choice_counts
-    else:
+    if not slim:
         state["drn_bytes"] = model_to_drn_bytes(factory._model)
         state["prism_file"] = getattr(factory, "_model_path", None)
         state["constants"] = getattr(factory, "_constants", None)
-        if (
-            factory._check_result is not None
-            and getattr(factory, "_choice_values", None) is None
-        ):
-            factory._extract_choice_values()
-        _ = factory.state_lookup
-        state["state_lookup"] = getattr(factory, "_state_lookup", None)
-        state["choice_values"] = getattr(factory, "_choice_values", None)
-        state["choice_offsets"] = getattr(factory, "_choice_offsets", None)
-        state["choice_counts"] = getattr(factory, "_choice_counts", None)
     return state
 
 
 def set_state(factory: ShieldFactory, state: dict) -> None:
     """Restore factory in-place from a pickle state dict."""
-    slim = state.get("slim", True)
+    version = state.get("format_version")
+    if version != FORMAT_VERSION:
+        raise ValueError(
+            f"Unsupported ShieldFactory pickle format version {version!r} "
+            f"(expected {FORMAT_VERSION}). Re-create and re-save the shield."
+        )
+    slim = state["slim"]
     factory._property = state["property"]
     factory._sparse = state["sparse"]
     factory.action_map = state.get("action_map")
     factory._check_result = None
     factory._formula = None
     factory._optimality_type = None
-    factory._state_lookup = state.get("state_lookup")
-    factory._choice_values = state.get("choice_values")
-    factory._choice_offsets = state.get("choice_offsets")
-    factory._choice_counts = state.get("choice_counts")
+    factory._state_lookup = state["state_lookup"]
+    factory._choice_data = state["choice_data"]
     if slim:
         factory._model = None
         factory._prism_program = None
@@ -99,7 +97,8 @@ def set_state(factory: ShieldFactory, state: dict) -> None:
         factory._constants = None
         logger.info(
             "ShieldFactory loaded (slim) — Storm model not available. "
-            "State lookup and choice values are ready; model-dependent methods will fail."
+            "Masks can be computed from the stored choice values; "
+            "model-dependent methods (exports, re-checking) will fail."
         )
     else:
         factory._model = model_from_drn_bytes(state["drn_bytes"])
@@ -114,8 +113,8 @@ def set_state(factory: ShieldFactory, state: dict) -> None:
         else:
             factory._prism_program = None
         logger.info(
-            "ShieldFactory loaded (full) — Storm model restored from DRN. "
-            "Call build() to run model checking on the restored model."
+            "ShieldFactory loaded (full) — Storm model restored from DRN; "
+            "stored choice values are reused until the property changes."
         )
 
 
