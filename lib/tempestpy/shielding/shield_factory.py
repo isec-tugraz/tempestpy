@@ -434,7 +434,24 @@ class ShieldFactory:
         return self._choice_data
 
     _PROB_OPERATOR = re.compile(r"\b(Pmax|Pmin)\s*=\s*\?")
-    _BOUNDED_G = re.compile(r"\bG\s*(<=|<)")
+
+    def _qualitative_unsafe_property(self) -> str:
+        """
+        Derive the qualitative query whose truth vector identifies unsafe states.
+
+        ``Pmax=? [phi]`` becomes ``Pmax>0 [phi]`` and ``Pmin=? [phi]`` becomes
+        ``Pmin>=1 [phi]``; everything else (e.g. a ``<<coalition>>`` prefix) is kept.
+        """
+        prop = _sanitize_property(self._property)
+        match = self._PROB_OPERATOR.search(prop)
+        if match is None:
+            raise ValueError(
+                f"Cannot derive unsafe-state query from property {self._property!r}: "
+                "expected a 'Pmax=?' or 'Pmin=?' operator"
+            )
+        is_minimize = self.optimality_type == stormpy.OptimizationDirection.Minimize
+        operator = "Pmin>=1" if is_minimize else "Pmax>0"
+        return prop[: match.start()] + operator + prop[match.end() :]
 
     def _get_unsafe_state_ids(self) -> frozenset:
         """
@@ -454,21 +471,9 @@ class ShieldFactory:
             raise RuntimeError("Cannot compute unsafe states: no property set.")
         if self._model is None:
             raise RuntimeError("Cannot compute unsafe states: Storm model not available.")
-        if self._BOUNDED_G.search(self._property):
-            raise NotImplementedError(
-                "unsafe states are not supported for step-bounded G properties"
-            )
 
         is_minimize = self.optimality_type == stormpy.OptimizationDirection.Minimize
-        replacement = "Pmin>=1" if is_minimize else "Pmax>0"
-        qualitative, n = self._PROB_OPERATOR.subn(
-            replacement, _sanitize_property(self._property), count=1
-        )
-        if n != 1:
-            raise ValueError(
-                f"Cannot derive unsafe-state query from property {self._property!r}: "
-                "expected a 'Pmax=?' or 'Pmin=?' operator"
-            )
+        qualitative = self._qualitative_unsafe_property()
         logger.trace(f"ShieldFactory._get_unsafe_state_ids: checking {qualitative!r}")
         formula = stormpy.parse_properties_for_prism_program(
             qualitative, self._prism_program
@@ -580,8 +585,8 @@ class ShieldFactory:
         The result comes from Storm's qualitative check (``Pmax>0`` /
         ``Pmin>=1``) without any added tolerance. Unbounded F/G are exact;
         bounded F on MDPs is exact on the zero side and numeric on the one
-        side; bounded SMG properties are unsupported by Storm here. Step-bounded
-        G is not supported. ``engine="dd"`` raises ``NotImplementedError``.
+        side; bounded SMG properties are unsupported by Storm here.
+        ``engine="dd"`` raises ``NotImplementedError``.
 
         Returns
         -------

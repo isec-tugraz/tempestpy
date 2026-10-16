@@ -103,9 +103,3 @@ def test_dd_engine_not_supported():
     with pytest.raises(NotImplementedError):
         factory.unsafe_states()
 
-
-def test_bounded_g_not_supported():
-    factory = ShieldFactory(files.prism_mdp_slipgrid, property='Pmax=? [G !"goal"]')
-    factory._property = 'Pmax=? [G<=3 !"goal"]'
-    with pytest.raises(NotImplementedError):
-        factory.unsafe_states()
