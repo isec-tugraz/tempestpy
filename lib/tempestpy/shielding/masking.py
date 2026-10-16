@@ -5,6 +5,7 @@ import numpy as np
 import stormpy
 
 from .action_lookup import ActionLookup
+from .choice_data import ChoiceData
 from .shield_result import ExplicitShieldResult, ShieldResult, SymbolicShieldResult
 
 ComparisonMode = Literal["absolute", "relative"]
@@ -91,42 +92,41 @@ def compute_symbolic_action_mask(self, config: ShieldConfig) -> SymbolicShieldRe
 
 def compute_explicit_action_mask(self, config: ShieldConfig) -> ExplicitShieldResult:
     if not hasattr(self, "_check_result") or self._check_result is None:
-        self._run_model_check()
+        if getattr(self, "_choice_data", None) is None:
+            self._run_model_check()
+    self._extract_choice_values()
+    return compute_explicit_mask(self._choice_data, config)
 
-    assert hasattr(self, "_model") and self._model is not None, "Model not initialized"
 
-    if not hasattr(self, "_choice_values") or self._choice_values is None:
-        self._extract_choice_values()
+def compute_explicit_mask(data: ChoiceData, config: ShieldConfig) -> ExplicitShieldResult:
+    """
+    Compute an explicit shield mask from stored choice data alone.
 
-    assert hasattr(self, "_choice_offsets") and self._choice_offsets is not None, "Choice offsets not initialized"
-
+    Pure function of *data* and *config*; needs no Storm model.
+    """
     action_lookup: Optional[ActionLookup] = config.action_lookup
     nr_actions_global: Optional[int] = len(action_lookup) if action_lookup is not None else None
-    is_minimize = (
-        self.optimality_type is not None
-        and self.optimality_type == stormpy.OptimizationDirection.Minimize
-    )
+    is_minimize = data.is_minimize
+    coalition_states = data.coalition_states
 
-    nr_states = int(self._model.nr_states)
+    nr_states = data.nr_states
     bitmask_by_state: list[int] = [0] * nr_states
     fallback_by_state: list[int] = [0] * nr_states
     nr_actions_by_state: list[int] = [0] * nr_states
     best_by_state = np.zeros(nr_states, dtype=float)
 
-    coalition_states: Optional[frozenset] = None
-    if self._model.model_type == stormpy.ModelType.SMG:
-        raw = self._formula.raw_formula
-        if hasattr(raw, "coalition"):
-            bv = self._model.compute_states_of_coalition(raw.coalition)
-            coalition_states = frozenset(s for s in range(nr_states) if bv[s])
+    def global_bit(sid: int, action_index: int, what: str) -> Optional[int]:
+        action_labels = data.labels_for_choice(sid, action_index)
+        if len(action_labels) > 1:
+            raise ValueError(what.format(action_labels))
+        if len(action_labels) == 0:
+            return None
+        return 1 << action_lookup.index(next(iter(action_labels)))
 
-    for state in self._model.states:
-        if coalition_states is not None and state.id not in coalition_states:
+    for sid in range(nr_states):
+        if coalition_states is not None and sid not in coalition_states:
             continue
-        sid = state.id
-        start = int(self._choice_offsets[sid])
-        end = int(self._choice_offsets[sid + 1])
-        pvals = self._choice_values[start:end]
+        pvals = data.values_for_state(sid)
 
         if pvals.size > 0:
             p_best = float(pvals.min()) if is_minimize else float(pvals.max())
@@ -165,16 +165,14 @@ def compute_explicit_action_mask(self, config: ShieldConfig) -> ExplicitShieldRe
                 if action_lookup is None:
                     bits |= (1 << action_index)
                 else:
-                    action_labels = frozenset(state.actions[action_index].labels)
-                    if len(action_labels) > 1:
-                        raise ValueError(
-                            f"Actions with multiple labels are ambiguous for global index "
-                            f"mapping, got: {action_labels}"
-                        )
-                    if len(action_labels) == 0:
-                        continue
-                    action_key = next(iter(action_labels))
-                    bits |= (1 << action_lookup.index(action_key))
+                    bit = global_bit(
+                        sid,
+                        action_index,
+                        "Actions with multiple labels are ambiguous for global index "
+                        "mapping, got: {}",
+                    )
+                    if bit is not None:
+                        bits |= bit
 
         bitmask_by_state[sid] = bits
 
@@ -184,15 +182,11 @@ def compute_explicit_action_mask(self, config: ShieldConfig) -> ExplicitShieldRe
             if action_lookup is None:
                 fallback_bits = 1 << best_local
             else:
-                action_labels = frozenset(state.actions[best_local].labels)
-                if len(action_labels) > 1:
-                    raise ValueError(
-                        f"Fallback action has multiple labels, ambiguous: {action_labels}"
-                    )
-                if len(action_labels) == 0:
-                    continue
-                action_key = next(iter(action_labels))
-                fallback_bits = 1 << action_lookup.index(action_key)
+                fallback_bits = global_bit(
+                    sid,
+                    best_local,
+                    "Fallback action has multiple labels, ambiguous: {}",
+                ) or 0
         fallback_by_state[sid] = fallback_bits
 
     return ExplicitShieldResult(
