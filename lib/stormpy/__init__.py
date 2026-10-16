@@ -291,12 +291,13 @@ def build_sparse_exact_interval_model(symbolic_description, properties=None):
     return _convert_sparse_model(intermediate, value_type=_ValueType.EXACT_INTERVAL)
 
 
-def build_symbolic_model(symbolic_description, properties=None):
+def build_symbolic_model(symbolic_description, properties=None, build_all_labels_and_rewards=False):
     """
     Build a model in symbolic representation from a symbolic description.
 
     :param symbolic_description: Symbolic model description to translate into a model.
     :param List[Property] properties: List of properties that should be preserved during the translation. If None, then all properties are preserved.
+    :param bool build_all_labels_and_rewards: If True, additionally build all declared labels and reward models, not only those needed by the properties.
     :return: Model in symbolic representation.
     """
     if not symbolic_description.undefined_constants_are_graph_preserving:
@@ -304,7 +305,7 @@ def build_symbolic_model(symbolic_description, properties=None):
 
     if properties:
         formulae = [(prop.raw_formula if isinstance(prop, Property) else prop) for prop in properties]
-        intermediate = _core._build_symbolic_model_from_symbolic_description(symbolic_description, formulae)
+        intermediate = _core._build_symbolic_model_from_symbolic_description(symbolic_description, formulae, build_all_labels_and_rewards)
     else:
         intermediate = _core._build_symbolic_model_from_symbolic_description(symbolic_description)
     return _convert_symbolic_model(intermediate, parametric=False)

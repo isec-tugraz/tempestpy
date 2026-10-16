@@ -33,3 +33,23 @@ class TestSparseBuilderLabels:
         assert set(no_formula.model.reward_models) <= set(
             with_formula.model.reward_models
         )
+
+
+class TestSymbolicBuilder:
+    """The dd model must keep declared reward models next to the formula's needs."""
+
+    def test_declared_reward_models_survive_when_formula_given(self, slipgrid_path):
+        with_formula = ShieldFactory(
+            slipgrid_path, property='Pmax=? [F "goal"]', engine="dd"
+        )
+        no_formula = ShieldFactory(slipgrid_path, engine="dd")
+        assert set(no_formula.model.reward_models) <= set(
+            with_formula.model.reward_models
+        )
+        assert len(set(no_formula.model.reward_models)) > 0
+
+    def test_inline_expression_property_can_be_built(self, slipgrid_path):
+        factory = ShieldFactory(
+            slipgrid_path, property="Pmax=? [F x=4 & y=4]", engine="dd"
+        )
+        assert int(factory.model.nr_states) > 0

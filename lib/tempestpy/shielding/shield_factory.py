@@ -357,7 +357,9 @@ class ShieldFactory:
             self._choice_labeling = model.choice_labeling
         else:
             properties = [self.formula] if self.formula is not None else None
-            model = stormpy.build_symbolic_model(self._prism_program, properties)
+            model = stormpy.build_symbolic_model(
+                self._prism_program, properties, build_all_labels_and_rewards=True
+            )
         return model
 
     def _prepare_property(self, property: str) -> None:

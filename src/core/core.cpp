@@ -103,13 +103,29 @@ storm::builder::ExplicitModelBuilder<double> makeExplicitModelBuilder(storm::sto
 
 // Thin wrapper for model building using symbolic representation
 template<storm::dd::DdType DdType, typename ValueType>
-std::shared_ptr<storm::models::symbolic::Model<DdType, ValueType>> buildSymbolicModel(storm::storage::SymbolicModelDescription const& modelDescription, std::vector<std::shared_ptr<storm::logic::Formula const>> const& formulas) {
+std::shared_ptr<storm::models::symbolic::Model<DdType, ValueType>> buildSymbolicModel(storm::storage::SymbolicModelDescription const& modelDescription, std::vector<std::shared_ptr<storm::logic::Formula const>> const& formulas, bool buildAllLabelsAndRewards) {
     if (formulas.empty()) {
         // Build full model
         return storm::api::buildSymbolicModel<DdType, ValueType>(modelDescription, formulas, true);
-    } else {
+    } else if (!buildAllLabelsAndRewards) {
         // Only build labels necessary for formulas
         return storm::api::buildSymbolicModel<DdType, ValueType>(modelDescription, formulas, false);
+    } else if (modelDescription.isPrismProgram()) {
+        // Keep what the formulas need (e.g. terminal states, labels for inline expressions), but additionally
+        // build all declared labels and reward models.
+        typename storm::builder::DdPrismModelBuilder<DdType, ValueType>::Options options(formulas);
+        options.buildAllLabels = true;
+        options.buildAllRewardModels = true;
+        storm::builder::DdPrismModelBuilder<DdType, ValueType> builder;
+        return builder.build(modelDescription.asPrismProgram(), options);
+    } else {
+        STORM_LOG_THROW(modelDescription.isJaniModel(), storm::exceptions::NotSupportedException, "Building symbolic model from this model description is unsupported.");
+        typename storm::builder::DdJaniModelBuilder<DdType, ValueType>::Options options(formulas);
+        options.buildAllLabels = true;
+        options.buildAllRewardModels = true;
+        options.applyMaximumProgressAssumption = (modelDescription.getModelType() == storm::storage::SymbolicModelDescription::ModelType::MA);
+        storm::builder::DdJaniModelBuilder<DdType, ValueType> builder;
+        return builder.build(modelDescription.asJaniModel(), options);
     }
 }
 
@@ -130,9 +146,9 @@ void define_build(py::module& m) {
     m.def("build_sparse_parametric_model_with_options", &buildSparseModelWithOptions<storm::RationalFunction>, "Build the model in sparse representation", py::arg("model_description"), py::arg("options"));
     m.def("build_sparse_interval_model_with_options", &buildSparseModelWithOptions<storm::Interval>, "Build the interval model in sparse representation", py::arg("model_description"), py::arg("options"));
     m.def("build_sparse_exact_interval_model_with_options", &buildSparseModelWithOptions<storm::RationalInterval>, "Build the exact interval model in sparse representation", py::arg("model_description"), py::arg("options"));
-    m.def("_build_symbolic_model_from_symbolic_description", &buildSymbolicModel<storm::dd::DdType::Sylvan, double>, "Build the model in symbolic representation", py::arg("model_description"), py::arg("formulas") = std::vector<std::shared_ptr<storm::logic::Formula const>>());
-    m.def("_build_symbolic_exact_model_from_symbolic_description", &buildSymbolicModel<storm::dd::DdType::Sylvan, storm::RationalNumber>, "Build the model in symbolic representation with exact number representation", py::arg("model_description"), py::arg("formulas") = std::vector<std::shared_ptr<storm::logic::Formula const>>());
-    m.def("_build_symbolic_parametric_model_from_symbolic_description", &buildSymbolicModel<storm::dd::DdType::Sylvan, storm::RationalFunction>, "Build the parametric model in symbolic representation", py::arg("model_description"), py::arg("formulas") = std::vector<std::shared_ptr<storm::logic::Formula const>>());
+    m.def("_build_symbolic_model_from_symbolic_description", &buildSymbolicModel<storm::dd::DdType::Sylvan, double>, "Build the model in symbolic representation", py::arg("model_description"), py::arg("formulas") = std::vector<std::shared_ptr<storm::logic::Formula const>>(), py::arg("build_all_labels_and_rewards") = false);
+    m.def("_build_symbolic_exact_model_from_symbolic_description", &buildSymbolicModel<storm::dd::DdType::Sylvan, storm::RationalNumber>, "Build the model in symbolic representation with exact number representation", py::arg("model_description"), py::arg("formulas") = std::vector<std::shared_ptr<storm::logic::Formula const>>(), py::arg("build_all_labels_and_rewards") = false);
+    m.def("_build_symbolic_parametric_model_from_symbolic_description", &buildSymbolicModel<storm::dd::DdType::Sylvan, storm::RationalFunction>, "Build the parametric model in symbolic representation", py::arg("model_description"), py::arg("formulas") = std::vector<std::shared_ptr<storm::logic::Formula const>>(), py::arg("build_all_labels_and_rewards") = false);
     m.def("_build_sparse_model_from_drn", &storm::api::buildExplicitDRNModel<double>, "Build the model from DRN", py::arg("file"), py::arg("options") = storm::parser::DirectEncodingParserOptions());
     m.def("_build_sparse_exact_model_from_drn", &storm::api::buildExplicitDRNModel<storm::RationalNumber>, "Build the model from DRN", py::arg("file"), py::arg("options") = storm::parser::DirectEncodingParserOptions());
     m.def("_build_sparse_parametric_model_from_drn", &storm::api::buildExplicitDRNModel<storm::RationalFunction>, "Build the parametric model from DRN", py::arg("file"), py::arg("options") = storm::parser::DirectEncodingParserOptions());
