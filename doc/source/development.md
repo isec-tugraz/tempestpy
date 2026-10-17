@@ -19,4 +19,4 @@ The following contains some general guidelines for developers.
 - The bindings are created with [pybind11](https://pybind11.readthedocs.io).
   The pybind11 version is set in ``pyproject.toml`` through ``requires``, and in ``CMakeLists.txt`` through ``find_package(pybind11 ...)``.
 - The minimal Python version is set in ``pyproject.toml`` through ``requires-python``, and in ``CMakeLists.txt`` through ``find_package(Python ...)``.
-- The [Storm](https://www.stormchecker.org) version is set in ``pyproject.toml`` through ``STORM_GIT_TAG``, and in ``CMakeLists.txt`` through ``STORM_MIN_VERSION``.
+- The Tempest version is pinned in ``pyproject.toml`` through ``STORM_GIT_TAG`` and ``STORM_GIT_COMMIT``, and the minimal required version is set in ``CMakeLists.txt`` through ``TEMPEST_MIN_VERSION``.

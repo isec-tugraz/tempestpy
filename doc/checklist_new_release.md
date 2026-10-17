@@ -3,8 +3,8 @@ The following steps should be performed when releasing a new stormpy version.
 1. Update the minimal required Storm version:
    This should be automatically handled by a CI workflow triggered by new releases in Storm.
    To manually update the Storm version:
-   * change `STORM_MIN_VERSION` in `CMakeLists.txt`
-   * change `STORM_GIT_TAG` in `pyproject.toml`
+   * change `TEMPEST_MIN_VERSION` in `CMakeLists.txt`
+   * change `STORM_GIT_TAG` and `STORM_GIT_COMMIT` in `pyproject.toml`
    Note that the CI test use the Docker `storm:ci` images which are only updated once per day.
    The CI fails if the new Storm version is not yet present in these CI Docker images.
 
