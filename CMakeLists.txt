@@ -96,7 +96,7 @@ if(ALLOW_STORM_SYSTEM)
         check_hint("Storm" ${storm_DIR} "${STORM_DIR_HINT}" ${storm_VERSION})
         # Check Storm version
         if (${storm_VERSION} VERSION_LESS ${STORM_MIN_VERSION})
-            MESSAGE(FATAL_ERROR "Tempestpy - Storm version ${storm_VERSION} from ${storm_DIR} is not supported anymore!\nTempestpy requires at least Storm version >= ${STORM_MIN_VERSION}.\nFor more information, see https://stormchecker.github.io/stormpy/installation.html#compatibility-of-stormpy-and-storm")
+            MESSAGE(FATAL_ERROR "Tempestpy - Storm version ${storm_VERSION} from ${storm_DIR} is not supported anymore!\nTempestpy requires at least Storm version >= ${STORM_MIN_VERSION}.")
         endif()
         # Check Tempest version (provided by Tempest builds, not by Storm)
         if (DEFINED TEMPEST_VERSION)
