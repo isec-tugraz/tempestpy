@@ -12,3 +12,7 @@ _build/
 cmake-build-debug/
 
 .DS_Store
+
+# Python virtual environments
+env/
+.venv/
