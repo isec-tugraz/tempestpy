@@ -6,7 +6,7 @@ TempestPy is a Python interface for shield synthesis, built as a fork of [stormp
 
 ## Dependencies
 
-TempestPy requires Tempest to be built from source before installation. Follow the Tempest README to build Tempest, then note the path to your build directory (e.g. `<tempest-root>/build`).
+TempestPy requires [Tempest](https://gitlab.tugraz.at/trustedai/tempest) to be built from source before installation. Follow the Tempest README to build Tempest, then note the path to your build directory (e.g. `<tempest-root>/build`). Note that this internal repository needs GitLab access.
 
 We require a python version 3.10 or newer.
 
@@ -26,6 +26,18 @@ pip install . \
 ```
 
 Replace `<tempest-root>/build` with the actual path to your Tempest build directory.
+
+### Tempest version
+
+The Tempest version that TempestPy is tested against is pinned in `pyproject.toml` (`STORM_GIT_TAG` and `STORM_GIT_COMMIT`, with the repository in `STORM_GIT_REPO`). If you do not pass `STORM_DIR_HINT` and no Tempest build is found, CMake fetches and builds exactly this version from the repository, which takes a long time and needs access to the internal GitLab.
+
+When an existing Tempest build is used, CMake checks it while configuring:
+
+- The Tempest version must be at least the minimum required by TempestPy (`TEMPEST_MIN_VERSION` in `CMakeLists.txt`). Otherwise the configuration fails.
+- If the build is not at the pinned commit, was built from a dirty working tree (uncommitted changes), or its revision or state is unknown, a warning is printed, and the installation continues. Such builds may or may not work.
+- With `--config-settings=cmake.define.STORM_STRICT=ON`, these warnings are errors instead. This is used for building wheels.
+
+The revision and state Tempest was built from can also be seen with `tempest --version`.
 
 ## Shielding
 
