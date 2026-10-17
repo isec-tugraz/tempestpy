@@ -19,8 +19,8 @@ option(ALLOW_STORM_FETCH "Allow fetching Storm" ON)
 # No defaults set here, they should be governed by the pyproject.toml
 set(STORM_GIT_REPO "" CACHE STRING  "Git repo used for fetching Storm")
 set(STORM_GIT_TAG "" CACHE STRING "Git repo tag used for fetching Storm")
-set(STORM_GIT_COMMIT "" CACHE STRING "Commit of Storm (Tempest) that is expected when using an existing build")
-option(STORM_STRICT "Treat a found Storm (Tempest) build that does not match the expected commit, is dirty or is of unknown state as an error instead of a warning" OFF)
+set(STORM_GIT_COMMIT "" CACHE STRING "Commit of Tempest that is expected when using an existing build")
+option(STORM_STRICT "Treat a found Tempest build that does not match the expected commit, is dirty or is of unknown state as an error instead of a warning" OFF)
 option(USE_STORM_DFT "Enable support for DFTs" ON)
 option(USE_STORM_GSPN "Enable support for GSPNs" ON)
 option(USE_STORM_PARS "Enable support for parametric models" ON)
@@ -54,7 +54,7 @@ find_package(Python 3.10 COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 3.0.4 EXACT CONFIG REQUIRED)
 message(STATUS "Tempestpy - Using pybind11 version ${pybind11_VERSION}")
 
-# Reports a problem with a found Storm (Tempest) build: a warning by default, an error with STORM_STRICT.
+# Reports a problem with a found Tempest build: a warning by default, an error with STORM_STRICT.
 function(tempest_build_problem MESSAGE)
     if (STORM_STRICT)
         message(FATAL_ERROR "Tempestpy - ${MESSAGE}\nThis is an error because STORM_STRICT is ON.")
