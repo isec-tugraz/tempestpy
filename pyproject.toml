@@ -62,8 +62,8 @@ test = [
 ]
 
 [dependency-groups]
-# Build requirements for builds with --no-build-isolation. Keep in sync with build-system.requires.
-build = [
+# Build requirements to install into the venv for incremental builds with --no-build-isolation. Keep in sync with build-system.requires.
+incremental-builds = [
     "scikit-build-core==0.12.2",
     "pybind11==3.0.4",
 ]

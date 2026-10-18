@@ -43,7 +43,7 @@ Replace `<tempest-root>/build` with the actual path to your Tempest build direct
 By default, pip builds in a temporary isolated environment. Its path changes with every run and ends up in the compiler flags, so every build recompiles all of Tempestpy. For repeated builds (e.g. development), install the build requirements into your virtual environment once and disable the isolation:
 
 ```bash
-pip install --group build   # needs pip >= 25.1, otherwise: pip install scikit-build-core==0.12.2 pybind11==3.0.4
+pip install --group incremental-builds   # needs pip >= 25.1, otherwise: pip install scikit-build-core==0.12.2 pybind11==3.0.4
 pip install -e . --no-build-isolation
 ```
 
