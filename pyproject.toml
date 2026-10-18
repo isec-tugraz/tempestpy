@@ -6,29 +6,32 @@ requires = [
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "stormpy"
-description = "stormpy - Python Bindings for Storm"
+name = "tempestpy"
+description = "TempestPy - Python bindings for Tempest with shield synthesis (fork of stormpy)"
 readme = "README.md"
 license.file = "LICENSE"
 dynamic = ["version"]
 authors = [
     { name = "S. Junges", email = "sebastian.junges@ru.nl" },
-    { name = "M. Volk", email = "m.volk@tue.nl" }
+    { name = "M. Volk", email = "m.volk@tue.nl" },
+    { name = "S. Pranger", email = "stefan.pranger@tugraz.at" },
 ]
 requires-python = ">=3.10"  # Python version should be synced with find_package(Python ...) in CMakeLists.txt
 dependencies = [
     "Deprecated",
+    "loguru",
 ]
 classifiers = [
     'Intended Audience :: Science/Research',
     'Topic :: Scientific/Engineering',
     'Topic :: Software Development :: Libraries :: Python Modules',
+    'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
 ]
 
 [project.urls]
-Homepage = "https://github.com/stormchecker/stormpy"
-Documentation = "https://stormchecker.github.io/stormpy"
-"Bug Tracker" = "https://github.com/stormchecker/stormpy/issues"
+Homepage = "https://gitlab.tugraz.at/trustedai/tempestpy"
+"Bug Tracker" = "https://gitlab.tugraz.at/trustedai/tempestpy/-/issues"
+Upstream = "https://github.com/stormchecker/stormpy"
 
 [project.optional-dependencies]
 numpy = [
@@ -102,7 +105,7 @@ STORM_GIT_COMMIT="d6c17c5bb33e1c2a1cf1c9c357ecafacd9505a67"
 
 [tool.scikit-build.metadata.version]
 provider = "scikit_build_core.metadata.regex"
-input = "lib/stormpy/_version.py"
+input = "lib/tempestpy/_version.py"
 
 [tool.cibuildwheel]
 manylinux-x86_64-image = "manylinux_2_34"

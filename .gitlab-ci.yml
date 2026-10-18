@@ -1,0 +1,61 @@
+# GitLab CI for TempestPy
+#########################
+# Builds TempestPy against the Tempest build image of the commit that is pinned in
+# pyproject.toml (STORM_GIT_COMMIT), and runs the tests.
+# The image is built by the Tempest CI (see trustedai/tempest), as
+#   $TEMPEST_IMAGE_REPO:<commit sha>
+#
+# The pin is read from pyproject.toml, which stays the only place where it is defined.
+# `image:` cannot read files, so the `prepare` job generates the pipeline for the
+# actual tests (.gitlab/ci/test.yml.in) with the image filled in, and `test` runs that.
+#
+# Requirements:
+# - Runner: Docker executor, tag `heavy-build`, Docker socket mounted, /srv/ci/ccache mounted at /ccache.
+# - The Tempest project must allow this project in its CI/CD job token allowlist
+#   (Settings > CI/CD > Job token permissions), so that the image can be pulled.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+stages:
+  - prepare
+  - test
+
+default:
+  tags:
+    - heavy-build
+
+variables:
+  TEMPEST_IMAGE_REPO: $CI_REGISTRY/trustedai/tempest/build
+
+prepare:
+  stage: prepare
+  image: docker:27-cli
+  script:
+    - COMMIT="$(sed -n 's/^STORM_GIT_COMMIT *= *"\(.*\)"/\1/p' pyproject.toml)"
+    - test -n "$COMMIT" || { echo "STORM_GIT_COMMIT not found in pyproject.toml"; exit 1; }
+    - echo "Pinned Tempest commit $COMMIT"
+    - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
+    - |
+      if ! docker manifest inspect "$TEMPEST_IMAGE_REPO:$COMMIT" > /dev/null 2>&1; then
+        echo "No Tempest image $TEMPEST_IMAGE_REPO:$COMMIT."
+        echo "Run the Tempest pipeline for that commit (the commit must be on a branch or tag there),"
+        echo "or check that this project is in the Tempest job token allowlist."
+        exit 1
+      fi
+    - sed "s|__TEMPEST_IMAGE__|$TEMPEST_IMAGE_REPO:$COMMIT|" .gitlab/ci/test.yml.in > test.yml
+  artifacts:
+    paths:
+      - test.yml
+
+test:
+  stage: test
+  needs: [prepare]
+  trigger:
+    include:
+      - artifact: test.yml
+        job: prepare
+    strategy: depend
