@@ -61,6 +61,13 @@ test = [
     "numpy",
 ]
 
+[dependency-groups]
+# Build requirements for builds with --no-build-isolation. Keep in sync with build-system.requires.
+build = [
+    "scikit-build-core==0.12.2",
+    "pybind11==3.0.4",
+]
+
 [tool.scikit-build]
 cmake.build-type = "Release"
 build-dir = "build/{wheel_tag}"

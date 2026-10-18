@@ -38,6 +38,17 @@ pip install . \
 
 Replace `<tempest-root>/build` with the actual path to your Tempest build directory.
 
+### Repeated builds
+
+By default, pip builds in a temporary isolated environment. Its path changes with every run and ends up in the compiler flags, so every build recompiles all of Tempestpy. For repeated builds (e.g. development), install the build requirements into your virtual environment once and disable the isolation:
+
+```bash
+pip install --group build   # needs pip >= 25.1, otherwise: pip install scikit-build-core==0.12.2 pybind11==3.0.4
+pip install -e . --no-build-isolation
+```
+
+The build directory is kept in `build/`, so later builds only recompile what changed.
+
 ### Tempest version
 
 The Tempest version that Tempestpy is tested against is pinned in `pyproject.toml` (`STORM_GIT_TAG` and `STORM_GIT_COMMIT`, with the repository in `STORM_GIT_REPO`). If no Tempest build is given through `STORM_DIR_HINT` or found on the system, exactly this version is fetched and built.
