@@ -114,6 +114,36 @@ if(ALLOW_STORM_SYSTEM)
         if (STORM_GIT_COMMIT AND "${TEMPEST_GIT_REVISION}" STREQUAL "${STORM_GIT_COMMIT}" AND "${TEMPEST_GIT_DIRTY}" STREQUAL "CLEAN")
             message(STATUS "Tempestpy - Tempest build matches the expected commit ${STORM_GIT_COMMIT} and is clean.")
         endif()
+        # Check the compiled Tempest library itself. The values checked above are written when Tempest is configured,
+        # so they say nothing about a build that is incomplete or was not rebuilt after a pull.
+        if (CMAKE_CROSSCOMPILING)
+            message(STATUS "Tempestpy - Cross-compiling, not checking the revision of the Tempest library.")
+        else()
+            try_run(TEMPEST_LIB_RUN_RESULT TEMPEST_LIB_COMPILE_RESULT
+                    "${CMAKE_BINARY_DIR}/tempest_library_revision"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tempest_library_revision.cpp"
+                    CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${storm_INCLUDE_DIR}"
+                    LINK_LIBRARIES storm-version-info
+                    CXX_STANDARD 20
+                    COMPILE_OUTPUT_VARIABLE TEMPEST_LIB_COMPILE_OUTPUT
+                    RUN_OUTPUT_VARIABLE TEMPEST_LIB_RUN_OUTPUT)
+            if (NOT TEMPEST_LIB_COMPILE_RESULT OR NOT "${TEMPEST_LIB_RUN_RESULT}" STREQUAL "0")
+                # An incomplete or broken build cannot be used, independent of STORM_STRICT.
+                MESSAGE(FATAL_ERROR "Tempestpy - Could not link and run against the Tempest library of the build in ${storm_DIR}.\nThe build is probably incomplete or broken, please (re)build Tempest.\n${TEMPEST_LIB_COMPILE_OUTPUT}${TEMPEST_LIB_RUN_OUTPUT}")
+            endif()
+            string(STRIP "${TEMPEST_LIB_RUN_OUTPUT}" TEMPEST_LIB_RUN_OUTPUT)
+            string(REPLACE " " ";" TEMPEST_LIB_INFO "${TEMPEST_LIB_RUN_OUTPUT}")
+            list(GET TEMPEST_LIB_INFO 0 TEMPEST_LIB_REVISION)
+            list(GET TEMPEST_LIB_INFO 1 TEMPEST_LIB_DIRTY)
+            if (NOT "${TEMPEST_LIB_REVISION}" STREQUAL "${TEMPEST_GIT_REVISION}" OR NOT "${TEMPEST_LIB_DIRTY}" STREQUAL "${TEMPEST_GIT_DIRTY}")
+                # Configured and compiled state disagree: Tempest was reconfigured (e.g. after a pull) but not fully rebuilt.
+                tempest_build_problem("The Tempest library in ${storm_DIR} was compiled from ${TEMPEST_LIB_REVISION} (${TEMPEST_LIB_DIRTY}), but the build is configured for ${TEMPEST_GIT_REVISION} (${TEMPEST_GIT_DIRTY}).\nThe build is probably outdated or incomplete, please rebuild Tempest.")
+            elseif (STORM_GIT_COMMIT AND NOT "${TEMPEST_LIB_REVISION}" STREQUAL "${STORM_GIT_COMMIT}")
+                tempest_build_problem("The Tempest library in ${storm_DIR} was compiled from commit ${TEMPEST_LIB_REVISION}, but commit ${STORM_GIT_COMMIT} is expected.")
+            else()
+                message(STATUS "Tempestpy - Tempest library was compiled from ${TEMPEST_LIB_REVISION} (${TEMPEST_LIB_DIRTY}).")
+            endif()
+        endif()
         if (STORM_VERSION_DEV)
             message(WARNING "Tempestpy - Using a development version of Storm. This may lead to issues and we recommend using a release of Storm instead.")
         endif()
