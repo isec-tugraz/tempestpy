@@ -46,7 +46,7 @@ When an existing Tempest build is used, CMake checks it while configuring:
 
 - The Tempest version must be at least the minimum required by Tempestpy (`TEMPEST_MIN_VERSION` in `CMakeLists.txt`). Otherwise the configuration fails.
 - If the build is not at the pinned commit, was built from a dirty working tree (uncommitted changes), or its revision or state is unknown, a warning is printed, and the installation continues. Such builds may or may not work.
-- The Tempest library itself is also checked: CMake links and runs a small program against it to read the revision it was compiled from. If this is not possible, the build is incomplete or broken and the configuration fails. If the compiled revision differs from the one the build was configured for (e.g. Tempest was pulled and reconfigured but not rebuilt) or from the pinned commit, a warning is printed.
+- The Tempest library itself is also checked: CMake links and runs a small program against it to read the revision it was compiled from. If it cannot be linked, the build is incomplete or broken and the configuration fails. If the program cannot be run, this is reported like the other problems below (a warning, or an error with `STORM_STRICT`). If the compiled revision differs from the one the build was configured for (e.g. Tempest was pulled and reconfigured but not rebuilt) or from the pinned commit, a warning is printed.
 - With `--config-settings=cmake.define.STORM_STRICT=ON`, these warnings are errors instead. This is used for building wheels.
 
 The revision and state Tempest was built from can also be seen with `tempest --version`.
