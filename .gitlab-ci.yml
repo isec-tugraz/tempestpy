@@ -1,16 +1,23 @@
 # GitLab CI for TempestPy
 #########################
-# Builds TempestPy against the Tempest build image of the commit that is pinned in
-# pyproject.toml (STORM_GIT_COMMIT), and runs the tests.
-# The image is built by the Tempest CI (see trustedai/tempest), as
-#   $TEMPEST_IMAGE_REPO:<commit sha>
+# Builds the TempestPy image (Dockerfile.release) on the Tempest build image of the
+# commit that is pinned in pyproject.toml (STORM_GIT_COMMIT), runs the tests inside it,
+# and publishes it. TempestPy is built once: the tests run on exactly the image that is
+# published.
 #
+#   $CI_REGISTRY_IMAGE:<commit sha>   every pipeline, pushed before the tests run
+#   $CI_REGISTRY_IMAGE:latest         default branch, only after the tests passed
+#   $CI_REGISTRY_IMAGE:<tag>          release tags, only after the tests passed
+#                                     ('+' replaced by '_', Docker tags cannot contain '+')
+#
+# The Tempest image is built by the Tempest CI (see trustedai/tempest), as
+#   $TEMPEST_IMAGE_REPO:<commit sha>
 # The pin is read from pyproject.toml, which stays the only place where it is defined.
-# `image:` cannot read files, so the `prepare` job generates the pipeline for the
-# actual tests (.gitlab/ci/test.yml.in) with the image filled in, and `test` runs that.
+#
+# Clean up old sha tags with a registry cleanup policy, and keep `latest` and the release tags.
 #
 # Requirements:
-# - Runner: Docker executor, tag `heavy-build`, Docker socket mounted, /srv/ci/ccache mounted at /ccache.
+# - Runner: Docker executor, tag `heavy-build`, access to the host's Docker socket.
 # - The Tempest project must allow this project in its CI/CD job token allowlist
 #   (Settings > CI/CD > Job token permissions), so that the image can be pulled.
 
@@ -21,8 +28,9 @@ workflow:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 stages:
-  - prepare
+  - build
   - test
+  - release
 
 default:
   tags:
@@ -30,15 +38,22 @@ default:
 
 variables:
   TEMPEST_IMAGE_REPO: $CI_REGISTRY/trustedai/tempest/build
+  IMAGE: $CI_REGISTRY_IMAGE
+  BUILD_THREADS: "4"
 
-prepare:
-  stage: prepare
+.docker-login: &docker-login
+  - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
+
+build-image:
+  stage: build
   image: docker:27-cli
+  resource_group: tempestpy-build
+  timeout: 3h
   script:
     - COMMIT="$(sed -n 's/^STORM_GIT_COMMIT *= *"\(.*\)"/\1/p' pyproject.toml)"
     - test -n "$COMMIT" || { echo "STORM_GIT_COMMIT not found in pyproject.toml"; exit 1; }
     - echo "Pinned Tempest commit $COMMIT"
-    - echo "$CI_JOB_TOKEN" | docker login -u gitlab-ci-token --password-stdin "$CI_REGISTRY"
+    - *docker-login
     - |
       if ! docker manifest inspect "$TEMPEST_IMAGE_REPO:$COMMIT" > /dev/null 2>&1; then
         echo "No Tempest image $TEMPEST_IMAGE_REPO:$COMMIT."
@@ -46,16 +61,48 @@ prepare:
         echo "or check that this project is in the Tempest job token allowlist."
         exit 1
       fi
-    - sed "s|__TEMPEST_IMAGE__|$TEMPEST_IMAGE_REPO:$COMMIT|" .gitlab/ci/test.yml.in > test.yml
-  artifacts:
-    paths:
-      - test.yml
+    - |
+      if docker manifest inspect "$IMAGE:$CI_COMMIT_SHA" > /dev/null 2>&1; then
+        echo "Image $IMAGE:$CI_COMMIT_SHA already exists, nothing to build."
+        exit 0
+      fi
+    - >
+      docker build -f Dockerfile.release --provenance=false --sbom=false
+      --build-arg TEMPEST_IMAGE="$TEMPEST_IMAGE_REPO:$COMMIT"
+      --build-arg TEMPEST_COMMIT="$COMMIT"
+      --build-arg no_threads="$BUILD_THREADS"
+      -t "$IMAGE:$CI_COMMIT_SHA" .
+    - docker push "$IMAGE:$CI_COMMIT_SHA"
+  after_script:
+    - docker image rm "$IMAGE:$CI_COMMIT_SHA" || true
 
+# Runs the tests inside the image that was just built, i.e. on exactly what is published.
+# The checkout only provides the tests: TempestPy itself is the installed one.
 test:
   stage: test
-  needs: [prepare]
-  trigger:
-    include:
-      - artifact: test.yml
-        job: prepare
-    strategy: depend
+  image: $IMAGE:$CI_COMMIT_SHA
+  needs: [build-image]
+  timeout: 1h
+  script:
+    - pip install pytest nbval numpy
+    - python -c "import stormpy, tempestpy; print(stormpy.__file__, tempestpy.__file__)"
+    - pytest tests
+
+# Gives the image a stable name once the tests passed. Retags in the registry without pulling the image.
+publish:
+  stage: release
+  image: docker:27-cli
+  needs: [test]
+  rules:
+    - if: $CI_COMMIT_TAG
+      variables:
+        PUBLISH_TAG_RAW: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      variables:
+        PUBLISH_TAG_RAW: latest
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - *docker-login
+    - PUBLISH_TAG="$(echo "$PUBLISH_TAG_RAW" | tr '+' '_')"
+    - docker buildx imagetools create --tag "$IMAGE:$PUBLISH_TAG" "$IMAGE:$CI_COMMIT_SHA"
