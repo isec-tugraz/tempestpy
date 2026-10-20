@@ -5,8 +5,6 @@ import numpy as np
 import stormpy
 from loguru import logger
 
-from loguru import logger
-
 from .action_lookup import ActionLookup
 from .choice_data import ChoiceData
 from .shield_result import ExplicitShieldResult, ShieldResult, SymbolicShieldResult

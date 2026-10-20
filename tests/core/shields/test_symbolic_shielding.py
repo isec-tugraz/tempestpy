@@ -135,36 +135,6 @@ class TestSymbolicShielding:
             symbolic_labels = _symbolic_allowed_labels(factory_symbolic, shield_symbolic, valuation)
             assert sparse_labels == symbolic_labels
 
-    def test_symbolic_shielding_until_coin2(self):
-        example_mdp = get_example_path("mdp", "lunar_lander_angle_shield.prism")
-        prop = 'Pmax=? [G ("safe")]'
-        # finished" & "all_coins_equal_1
-        config = ShieldConfig(threshold=1)
-
-        factory_symbolic = ShieldFactory(example_mdp,
-                                         property=prop,
-                                         engine="dd",
-                                         constants={"GRAN": 20})
-        shield_symbolic = factory_symbolic.build(config)
-        factory_sparse = ShieldFactory(example_mdp,
-                                       property=prop,
-                                       engine="sparse",
-                                       constants={"GRAN": 20})
-        shield_sparse = factory_sparse.build(config)
-
-        valuations = [
-            factory_sparse.state_lookup.values_for_state_id(sid)
-            for sid in range(min(10000, factory_sparse.model.nr_states))
-        ]
-        
-        for valuation in valuations:
-            print(f"Valuation: {valuation}")
-            print("Symbolic shield: %f", bin(int(shield_symbolic.bitmask_by_state.query(valuation))))
-            sparse_sid = factory_sparse.get_state_id(valuation)
-            sparse_labels = _sparse_allowed_labels(factory_sparse, shield_sparse, sparse_sid)
-            symbolic_labels = _symbolic_allowed_labels(factory_symbolic, shield_symbolic, valuation)
-            assert sparse_labels == symbolic_labels
-
     def test_symbolic_shielding_next_coin2(self):
         example_mdp = get_example_path("mdp", "coin2-2.nm")
         prop = 'Pmin=? [ X "all_coins_equal_1"]'
@@ -183,10 +153,8 @@ class TestSymbolicShielding:
             factory_sparse.state_lookup.values_for_state_id(sid)
             for sid in range(min(100, factory_sparse.model.nr_states))
         ]
-        
+
         for valuation in valuations:
-            print(f"Valuation: {valuation}")
-            print("Symbolic shield: %f", bin(int(shield_symbolic.bitmask_by_state.query(valuation))))
             sparse_sid = factory_sparse.get_state_id(valuation)
             sparse_labels = _sparse_allowed_labels(factory_sparse, shield_sparse, sparse_sid)
             symbolic_labels = _symbolic_allowed_labels(factory_symbolic, shield_symbolic, valuation)
@@ -210,7 +178,7 @@ class TestSymbolicShielding:
             factory_sparse.state_lookup.values_for_state_id(sid)
             for sid in range(min(100, factory_sparse.model.nr_states))
         ]
-        
+
         for valuation in valuations:
             sparse_sid = factory_sparse.get_state_id(valuation)
             sparse_labels = _sparse_allowed_labels(factory_sparse, shield_sparse, sparse_sid)
