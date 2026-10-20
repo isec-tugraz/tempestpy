@@ -62,6 +62,17 @@ When an existing Tempest build is used, CMake checks it while configuring:
 
 The revision and state Tempest was built from can also be seen with `tempest --version`.
 
+### Docker image
+
+The CI publishes an image with Tempest and Tempestpy installed in a virtual environment (`/opt/venv`, already on the `PATH`) to the container registry of this project, as `:latest` (default branch) and `:<release tag>`. Use it directly, or as the base of your own image:
+
+```dockerfile
+FROM <registry>/trustedai/tempestpy:latest
+RUN pip install gymnasium
+```
+
+The image is defined in `Dockerfile.release`, and is built on the Tempest build image of the commit that is pinned in `pyproject.toml`. Pulling it requires access to the registry (a deploy token with `read_registry` works).
+
 ## Shielding
 
 The primary extension over stormpy is the `stormpy.shielding` module, which synthesizes action masks (shields) from probabilistic PRISM models.
