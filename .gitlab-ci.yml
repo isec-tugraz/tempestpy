@@ -18,8 +18,10 @@
 #
 # Requirements:
 # - Runner: Docker executor, tag `heavy-build`, access to the host's Docker socket.
-# - The Tempest project must allow this project in its CI/CD job token allowlist
-#   (Settings > CI/CD > Job token permissions), so that the image can be pulled.
+# - The CI/CD variables TEMPEST_REGISTRY_USER and TEMPEST_REGISTRY_TOKEN (group level,
+#   not protected): a deploy token with `read_registry` that can read the Tempest registry.
+#   The job token is not enough, it only has the permissions of whoever started the
+#   pipeline, which fails for pipelines started by a bot.
 
 workflow:
   rules:
@@ -39,6 +41,7 @@ default:
 variables:
   TEMPEST_IMAGE_REPO: $CI_REGISTRY/trustedai/tempest/build
   IMAGE: $CI_REGISTRY_IMAGE
+  TEMPEST_DOCKER_CONFIG: /tmp/docker-tempest
   BUILD_THREADS: "4"
 
 .docker-login: &docker-login
@@ -54,11 +57,14 @@ build-image:
     - test -n "$COMMIT" || { echo "STORM_GIT_COMMIT not found in pyproject.toml"; exit 1; }
     - echo "Pinned Tempest commit $COMMIT"
     - *docker-login
+    - test -n "$TEMPEST_REGISTRY_USER" -a -n "$TEMPEST_REGISTRY_TOKEN" || { echo "TEMPEST_REGISTRY_USER / TEMPEST_REGISTRY_TOKEN are not set"; exit 1; }
+    - echo "$TEMPEST_REGISTRY_TOKEN" | docker --config "$TEMPEST_DOCKER_CONFIG" login -u "$TEMPEST_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
     - |
-      if ! docker manifest inspect "$TEMPEST_IMAGE_REPO:$COMMIT" > /dev/null 2>&1; then
+      if ! out="$(docker --config "$TEMPEST_DOCKER_CONFIG" manifest inspect "$TEMPEST_IMAGE_REPO:$COMMIT" 2>&1)"; then
+        echo "$out"
         echo "No Tempest image $TEMPEST_IMAGE_REPO:$COMMIT."
         echo "Run the Tempest pipeline for that commit (the commit must be on a branch or tag there),"
-        echo "or check that this project is in the Tempest job token allowlist."
+        echo "or check the deploy token in TEMPEST_REGISTRY_USER / TEMPEST_REGISTRY_TOKEN."
         exit 1
       fi
     - |
@@ -67,7 +73,7 @@ build-image:
         exit 0
       fi
     - >
-      docker build -f Dockerfile.release --provenance=false --sbom=false
+      docker --config "$TEMPEST_DOCKER_CONFIG" build -f Dockerfile.release --provenance=false --sbom=false
       --build-arg TEMPEST_IMAGE="$TEMPEST_IMAGE_REPO:$COMMIT"
       --build-arg TEMPEST_COMMIT="$COMMIT"
       --build-arg no_threads="$BUILD_THREADS"
@@ -75,6 +81,7 @@ build-image:
     - docker push "$IMAGE:$CI_COMMIT_SHA"
   after_script:
     - docker image rm "$IMAGE:$CI_COMMIT_SHA" || true
+    - rm -rf "$TEMPEST_DOCKER_CONFIG"
 
 # Runs the tests inside the image that was just built, i.e. on exactly what is published.
 # The checkout only provides the tests: TempestPy itself is the installed one.
