@@ -158,8 +158,9 @@ class TestSymbolicShieldResult:
             result.to_bitmask_dict()
 
     def test_compatibility_properties(self):
-        result = self._make({(("x", 1),): 0})
+        result = self._make({(("x", 1),): 0}, fallback_values={(("x", 1),): 0b001})
         assert result.bitmask_by_state is result.bitmask_add
-        assert result.fallback_by_state == []
+        assert result.fallback_by_state is result.fallback_add
+        assert result.fallback_by_state.query({"x": 1}) == 0b001
         assert result.nr_actions_by_state == []
         assert result.best_value_by_state is None

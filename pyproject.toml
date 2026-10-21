@@ -106,8 +106,8 @@ STORMPY_DISABLE_SIGNATURE_DOC="OFF"
 # The Tempest version that stormpy is built and tested against. This is the only place where the pin is defined;
 # CMakeLists.txt reads these values. STORM_GIT_TAG is used for fetching, STORM_GIT_COMMIT for checking a found build.
 STORM_GIT_REPO="https://gitlab.tugraz.at/trustedai/tempest.git"
-STORM_GIT_TAG="d81e8c48934834d4ecc516beddfeac27b26c7afb"
-STORM_GIT_COMMIT="d81e8c48934834d4ecc516beddfeac27b26c7afb"
+STORM_GIT_TAG="47d85ab1f0835b07641a5ca84dd05ea1959ffd70"
+STORM_GIT_COMMIT="47d85ab1f0835b07641a5ca84dd05ea1959ffd70"
 
 
 [tool.scikit-build.metadata.version]

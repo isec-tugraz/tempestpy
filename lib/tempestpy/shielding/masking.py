@@ -83,14 +83,23 @@ def compute_symbolic_action_mask(self, config: ShieldConfig) -> SymbolicShieldRe
         raise ValueError("DD shield masks do not support action_lookup remapping")
     if not self._check_result.has_choice_values:
         raise RuntimeError("Cannot compute DD shield mask: check result has no choice values")
-    is_minimize = (
-        self.optimality_type is not None
-        and self.optimality_type == stormpy.OptimizationDirection.Minimize
+    direction = (
+        self.optimality_type
+        if self.optimality_type is not None
+        else stormpy.OptimizationDirection.Maximize
     )
-    shield_mask = self._check_result.compute_mask_add(self._model, config.threshold, is_minimize)
+    logger.trace(f"Computing symbolic shield mask with threshold {config.threshold} and direction {direction}")
+    shield_mask = self._check_result.compute_mask_add(
+        self._model, config.threshold, direction
+    )
+    fallback = self._check_result.compute_fallback_add(
+        self._model, config.threshold, direction
+    )
     return SymbolicShieldResult(
         config=config,
         bitmask_add=shield_mask,
+        fallback_add=fallback,
+        choice_values_add=self._check_result.choice_values,
         nr_actions=0,
     )
 

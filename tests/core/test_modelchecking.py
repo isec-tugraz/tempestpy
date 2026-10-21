@@ -290,6 +290,13 @@ class TestModelChecking:
         assert shield_value == 15
         assert "s=0" in shield_valuation.to_string()
 
+        fallback = result.compute_fallback_add(
+            model, 1.1, stormpy.OptimizationDirection.Maximize
+        )
+        assert fallback.node_count > 0
+        assert "s" in fallback.meta_variable_names
+        assert fallback.query({"s": 0}) > 0
+
     def test_model_checking_prism_dd_exact_mdp_shield_mask(self):
         program = stormpy.parse_prism_program(get_example_path("mdp", "maze_2.nm"))
         formulas = stormpy.parse_properties_for_prism_program('Pmax=? [ F "goal" ]', program)
@@ -307,6 +314,14 @@ class TestModelChecking:
         assert shield_value == 0b1111
         assert "s=0" in shield_valuation.to_string()
 
+        fallback = result.compute_fallback_add(
+            model,
+            stormpy.Rational("1.1"),
+            stormpy.OptimizationDirection.Maximize,
+        )
+        assert fallback.node_count > 0
+        assert fallback.query({"s": 0}) > 0
+
     def test_shield_factory_dd_build_returns_shield_add(self):
         from tempestpy.shielding import ShieldConfig, ShieldFactory, SymbolicShieldResult
 
@@ -323,7 +338,12 @@ class TestModelChecking:
         assert shield.bitmask_by_state.node_count > 0
         assert shield.bitmask_by_state.get_meta_variable("s").can_represent(0)
         assert shield.bitmask_by_state.query({"s": 0}) == 15
-        assert shield.fallback_by_state == []
+        assert shield.fallback_by_state is shield.fallback_add
+        assert shield.fallback_by_state.query({"s": 0}) == 0
+        assert shield.choice_values is shield.choice_values_add
+        assert shield.choice_values_by_state is shield.choice_values_add
+        assert shield.choice_values_add.node_count > 0
+        assert "s" in shield.choice_values_add.meta_variable_names
         assert shield.nr_actions_by_state == []
 
     def test_model_checking_prism_hybrid_dtmc(self):
