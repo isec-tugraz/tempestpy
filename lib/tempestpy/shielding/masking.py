@@ -202,15 +202,15 @@ def compute_explicit_mask(
 
         fallback_bits = 0
         if bits == 0 and pvals.size > 0:
-            best_local = int(np.argmin(pvals)) if is_minimize else int(np.argmax(pvals))
-            if action_lookup is None:
-                fallback_bits = 1 << best_local
-            else:
-                fallback_bits = global_bit(
-                    sid,
-                    best_local,
-                    "Fallback action has multiple labels, ambiguous: {}",
-                ) or 0
+            for best_local in np.flatnonzero(pvals == p_best):
+                if action_lookup is None:
+                    fallback_bits |= 1 << int(best_local)
+                else:
+                    fallback_bits |= global_bit(
+                        sid,
+                        int(best_local),
+                        "Fallback action has multiple labels, ambiguous: {}",
+                    ) or 0
         fallback_by_state[sid] = fallback_bits
 
     return ExplicitShieldResult(
