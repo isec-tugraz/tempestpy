@@ -3,6 +3,7 @@ import pickle
 import numpy as np
 import pytest
 
+from tempestpy.shielding.action_lookup import ActionLookup
 from tempestpy.shielding import ShieldConfig, ShieldFactory
 from tempestpy.shielding.choice_data import ChoiceData
 from tempestpy.shielding.masking import compute_explicit_mask
@@ -101,6 +102,32 @@ class TestChoiceDataMasks:
         )
         assert result.bitmask_by_state == [0b01, 0b1, 0b0]
         assert result.fallback_by_state[2] == 0b1
+
+    def test_fallback_contains_all_tied_maximizing_actions(self):
+        data = _data(values=np.array([0.3, 0.7, 0.7, 0.1]), offsets=np.array([0, 3, 4]))
+        result = compute_explicit_mask(data, ShieldConfig(threshold=1.0))
+        assert result.bitmask_by_state == [0, 0]
+        assert result.fallback_by_state == [0b110, 0b1]
+
+    def test_fallback_contains_all_tied_minimizing_actions(self):
+        data = _data(
+            values=np.array([0.5, 0.2, 0.9, 0.2]),
+            offsets=np.array([0, 4]),
+            is_minimize=True,
+        )
+        result = compute_explicit_mask(data, ShieldConfig(threshold=0.0))
+        assert result.fallback_by_state == [0b1010]
+
+    def test_fallback_ties_use_global_action_bits(self):
+        lookup = ActionLookup.from_dict({"a": 0, "b": 1, "c": 2})
+        data = _data(
+            values=np.array([0.4, 0.4, 0.1]),
+            offsets=np.array([0, 3]),
+            label_vocab=(frozenset({"a"}), frozenset({"b"}), frozenset({"c"})),
+            label_ids=np.array([2, 0, 1], dtype=np.int32),
+        )
+        result = compute_explicit_mask(data, ShieldConfig(threshold=1.0, action_lookup=lookup))
+        assert result.fallback_by_state == [0b101]
 
     def test_unsafe_ids_are_supplied_by_caller(self):
         data = _data()
