@@ -1,12 +1,12 @@
-[![Tempest upstream](https://img.shields.io/badge/tempest--upstream-dc451dc8-blue)](https://github.com/tempestchecker/tempest/commit/dc451dc83)
+[![Tempest upstream](https://img.shields.io/badge/tempest--upstream-dc451dc8-blue)](https://github.com/isec-tugraz/tempest/commit/dc451dc83)
 
 # Tempestpy
 
-Tempestpy is a Python interface for shield synthesis, built as a fork of [stormpy](https://github.com/stormchecker/stormpy). It provides Python bindings for [Tempest](https://github.com/tempestchecker/tempest) — a probabilistic model checker extended with shield synthesis capabilities.
+Tempestpy is a Python interface for shield synthesis, built as a fork of [stormpy](https://github.com/stormchecker/stormpy). It provides Python bindings for [Tempest](https://github.com/isec-tugraz/tempest) — a probabilistic model checker extended with shield synthesis capabilities.
 
 ## Dependencies
 
-Tempestpy builds on [Tempest](https://gitlab.tugraz.at/trustedai/tempest). By default, the installation fetches and builds the Tempest version that Tempestpy is pinned to, so no separate Tempest build is needed. The build dependencies of Tempest (see the Tempest README) must be installed.
+Tempestpy builds on [Tempest](https://github.com/isec-tugraz/tempest). By default, the installation fetches and builds the Tempest version that Tempestpy is pinned to, so no separate Tempest build is needed. The build dependencies of Tempest (see the Tempest README) must be installed.
 
 We require a python version 3.10 or newer.
 
@@ -62,33 +62,24 @@ When an existing Tempest build is used, CMake checks it while configuring:
 
 The revision and state Tempest was built from can also be seen with `tempest --version`.
 
-### Docker image
-
-The CI publishes an image with Tempest and Tempestpy installed in a virtual environment (`/opt/venv`, already on the `PATH`) to the container registry of this project, as `:latest` (default branch) and `:<release tag>`. Use it directly, or as the base of your own image:
-
-```dockerfile
-FROM <registry>/trustedai/tempestpy:latest
-RUN pip install gymnasium
-```
-
-The image is defined in `Dockerfile.release`, and is built on the Tempest build image of the commit that is pinned in `pyproject.toml`. Pulling it requires access to the registry (a deploy token with `read_registry` works).
-
 ## Shielding
 
-The primary extension over stormpy is the `stormpy.shielding` module, which synthesizes action masks (shields) from probabilistic PRISM models.
+The primary extension over stormpy is the `tempestpy.shielding` module, which synthesizes action masks (shields) from probabilistic PRISM models. It is also importable as `stormpy.shielding`.
 
 ```python
-import stormpy.shielding as shielding
+from tempestpy.shielding import ShieldConfig, ShieldFactory
 
-factory = shielding.ShieldFactory(
-    model_path="model.prism",
-    property_str="Pmin=? [F unsafe]",
-)
-config = shielding.ShieldConfig(threshold=0.05)
-result = factory.compute(config)
+factory = ShieldFactory("model.prism", property='Pmin=? [F "unsafe"]')
+shield = factory.build(ShieldConfig(threshold=0.05))
+
+state = 0
+shield.query_mask(state)             # bitmask of the allowed actions
+shield.is_action_allowed(state, 1)   # is action 1 allowed in this state?
 ```
 
-See `lib/stormpy/shielding/` for the full module.
+With `engine="dd"`, the shield is computed symbolically, and states are given as variable valuations (for example `{"s": 0}`) instead of state ids.
+
+See `lib/tempestpy/shielding/` for the full module.
 
 ## Authors
 - Stefan Pranger (tempestpy)

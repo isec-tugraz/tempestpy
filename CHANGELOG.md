@@ -1,6 +1,25 @@
 Changelog
 =============
 
+Version 0.1.x
+--------------
+
+### Version 0.1.0 (2026/10)
+Requires Tempest version >= 0.1.0 (based on Storm 1.12.0).
+
+First release of Tempestpy, the Python interface for shield synthesis, forked from stormpy 1.12.0.
+
+- Added the `tempestpy.shielding` module (also importable as `stormpy.shielding`):
+    * `ShieldFactory` and `ShieldConfig` to compute shields from PRISM models and PCTL properties
+    * Explicit (`engine="sparse"`) and symbolic (`engine="dd"`) shields, with `ExplicitShieldResult` and `SymbolicShieldResult`
+    * Shields for until, next and step-bounded until properties, and shields with unsafe states
+    * Fallback for symbolic shields, including all actions tied for the best value
+    * Shielding wrappers for reinforcement learning, serialization of shield results, and export helpers
+- Added bindings for explicit SMG model checking and SMG masking
+- Added bindings for choice values from symbolic model checking
+- The installation fetches and builds the pinned Tempest version, and checks an existing Tempest build against the pinned commit
+- Renamed the distribution to `tempestpy`
+
 Version 1.12.x
 --------------
 

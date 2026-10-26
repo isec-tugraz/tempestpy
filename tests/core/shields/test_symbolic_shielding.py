@@ -1,4 +1,4 @@
-from stormpy.shielding import ShieldConfig, ShieldFactory
+from tempestpy.shielding import ShieldConfig, ShieldFactory
 
 from helpers.helper import get_example_path
 
